@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Tally Connector</title>
+  <link rel="stylesheet" href="assets/ajems-ui.css" />
+  <style>
+    /* Only what the shared system does not already cover */
+    .page.hidden { display:none; }
+    /* activity log line colouring */
+    .log-line { padding:1px 0; }
+    .log-line.ok   { color:#0a7b46; font-weight:500; }
+    .log-line.bad  { color:#b42020; font-weight:500; }
+    .log-line.warn { color:#8a5206; }
+    .log-line.head { color:var(--text); font-weight:600; }
+    .w-ok  { color:#0a7b46; font-weight:600; }
+    .w-bad { color:#b42020; font-weight:600; }
+    .w-num { color:var(--teal-700); font-weight:600; }
+    .brand-logo { width:132px; }
+  </style>
+</head>
+<body>
+
+  <!-- ============ SIDEBAR ============ -->
+  <div class="side">
+    <div class="brand"><img class="brand-logo" src="assets/wordmark-dark.png" alt="AJEMS" /></div>
+
+    <div class="side-nav">
+      <div class="nav-label">Work</div>
+      <button class="nav-item on" id="nav-sync" onclick="showTab('sync')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Sync
+      </button>
+
+      <div class="nav-label">Configure</div>
+      <button class="nav-item" id="nav-settings" onclick="showTab('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </div>
+
+    <div class="side-card">
+      <div class="l">CONNECTION</div>
+      <div class="v"><span id="sideDot" class="dot"></span><span id="sideStatus">Not connected</span></div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <div class="topbar">
+      <div class="icon-btn" onclick="showTab('sync')" title="Sync">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </div>
+      <div class="crumbs">
+        <span class="crumb">Tally Connector</span>
+        <span>&rsaquo;</span>
+        <span class="crumb here" id="crumbPage">Sync</span>
+      </div>
+      <div class="topbar-right">
+        <span class="chip bordered"><span id="tallyDot" class="dot"></span><span id="tallyStatus">Tally: checking</span></span>
+        <span class="chip bordered"><span id="ajemsDot" class="dot"></span><span id="ajemsStatus">AJEMS: not connected</span></span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ---------- SYNC ---------- -->
+      <div class="page" id="page-sync">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Sync</div>
+            <div class="page-sub">Connect your AJEMS workspace, then send your Tally data across.</div>
+          </div>
+        </div>
+
+        <div class="banner" id="updateBar" style="display:none; margin-bottom:18px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span id="updateText" style="flex:1;"></span>
+          <button id="updateBtn" class="btn btn-primary btn-sm">Download update</button>
+        </div>
+
+        <div class="sec-label">Connection</div>
+        <div class="card">
+          <div class="card-title">AJEMS workspace</div>
+          <div class="card-sub">Enter your AJEMS organisation name. Spaces and capitals do not matter (e.g. <b>AJEMS</b>, <b>ajems</b> and <b>AJEMS CORP</b> all work).</div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div class="field">
+                <label class="field-label" for="tenantUrl">Organisation name</label>
+                <input class="input" id="tenantUrl" placeholder="Your organisation name" />
+              </div>
+              <div class="field">
+                <label class="field-label" for="secretKey">Secret key</label>
+                <input class="input" id="secretKey" type="password" placeholder="Your JSON Builder secret key" />
+              </div>
+            </div>
+            <div class="row" style="margin-top:16px;">
+              <button id="connectBtn" class="btn btn-primary">AJEMS Connect</button>
+              <button id="testBtn" class="btn btn-ghost">Tally Connect</button>
+              <span class="hint">Connect your AJEMS workspace and check that Tally is running before you sync.</span>
+            </div>
+
+            <div class="banner" id="statusBanner" style="margin-top:16px;">
+              <svg id="statusIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span id="statusText">Enter your organisation name and secret key, then click <b>AJEMS Connect</b>. The Tally Connector app is created in your workspace automatically if it is not there yet.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-label">Sync</div>
+        <div class="card">
+          <div class="card-title">Send Tally data to AJEMS</div>
+          <div class="card-sub">New records are added, changed records are updated, unchanged records are skipped.</div>
+          <div class="card-body">
+            <button id="syncBtn" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Run Sync
+            </button>
+          </div>
+        </div>
+
+        <div class="sec-label">Activity</div>
+        <div class="card">
+          <div class="card-title">Activity log</div>
+          <div class="card-body">
+            <div class="log" id="log">Ready. Click "Run Sync" to start.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- SETTINGS ---------- -->
+      <div class="page hidden" id="page-settings">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Settings</div>
+            <div class="page-sub">Tally connection, automatic sync and the linked AJEMS form endpoints.</div>
+          </div>
+        </div>
+
+        <div class="sec-label">Tally</div>
+        <div class="card">
+          <div class="card-title">Tally connection</div>
+          <div class="card-sub">Tally Prime must be running with your company loaded when a sync runs.</div>
+          <div class="card-body">
+            <div class="field" style="max-width:420px;">
+              <label class="field-label" for="tallyUrl">Tally URL</label>
+              <input class="input" id="tallyUrl" placeholder="http://localhost:9000" />
+            </div>
+            <label class="check" style="margin-top:16px;">
+              <input type="checkbox" id="verboseChk" />
+              <span>Detailed log - show every record and raw responses (for troubleshooting)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="sec-label">Automation</div>
+        <div class="card">
+          <div class="card-title">Automatic sync</div>
+          <div class="card-body">
+            <div class="stack">
+              <label class="check">
+                <input type="checkbox" id="syncOnTallyStart" />
+                <span>While Tally is open, sync every</span>
+                <input class="input sm" type="number" id="syncEveryMinutes" min="5" max="1440" style="width:76px;" />
+                <span>minute(s)</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="syncDaily" />
+                <span>Sync every day at</span>
+                <input class="input sm" type="time" id="autoSyncTime" style="width:126px;" />
+              </label>
+              <label class="check">
+                <input type="checkbox" id="notifyOnSync" />
+                <span>Show a Windows notification when a sync finishes</span>
+              </label>
+            </div>
+            <div class="banner" style="margin-top:16px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span id="autoNote"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-label">Endpoints</div>
+        <div class="card">
+          <div class="card-title collapse-head" id="urlsHead" onclick="toggleUrls()">
+            <span class="chev" id="urlsChev">&rsaquo;</span>AJEMS form API URLs
+          </div>
+          <div class="collapse-body" id="urlsBody">
+            <div class="card-sub" style="margin-top:0;">These URLs are filled automatically when you click <b>Connect</b> on the Sync page. You can edit them manually here if needed.</div>
+            <div class="grid-2" style="margin-top:16px;">
+              <div class="field"><label class="field-label">Tally Companies</label><input class="input mono" id="furl_companies" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Ledger Groups</label><input class="input mono" id="furl_ledger_groups" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Ledgers</label><input class="input mono" id="furl_ledgers" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Vouchers</label><input class="input mono" id="furl_vouchers" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Voucher Entries</label><input class="input mono" id="furl_voucher_entries" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Voucher Items</label><input class="input mono" id="furl_voucher_items" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Outstanding</label><input class="input mono" id="furl_outstanding" placeholder="Filled on Connect" /></div>
+              <div class="field"><label class="field-label">Tally Sync Logs</label><input class="input mono" id="furl_sync_logs" placeholder="Filled on Connect" /></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-actions">
+          <button id="disconnectBtn" class="btn btn-danger-ghost">Disconnect</button>
+          <div class="spacer"></div>
+          <button id="saveBtn" class="btn btn-primary">Save settings</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const ENTITIES = ["companies","ledger_groups","ledgers","vouchers","voucher_entries","voucher_items","outstanding","sync_logs"];
+    const logEl = document.getElementById("log");
+    const SYNC_BTN_HTML = document.getElementById("syncBtn").innerHTML;
+    const syncBtn = document.getElementById("syncBtn");
+    const testBtn = document.getElementById("testBtn");
+    const dot = document.getElementById("tallyDot");
+    const tallyStatus = document.getElementById("tallyStatus");
+
+    function toggleUrls() {
+      document.getElementById("urlsBody").classList.toggle("open");
+      document.getElementById("urlsChev").classList.toggle("open");
+    }
+
+    function setSideStatus(connected) {
+      document.getElementById("sideDot").className = connected ? "dot ok" : "dot";
+      document.getElementById("sideStatus").textContent = connected ? "Connected" : "Not connected";
+    }
+
+    function showTab(tab) {
+      document.getElementById("crumbPage").textContent = tab === "sync" ? "Sync" : "Settings";
+      document.getElementById("page-sync").classList.toggle("hidden", tab !== "sync");
+      document.getElementById("page-settings").classList.toggle("hidden", tab !== "settings");
+      document.getElementById("nav-sync").classList.toggle("on", tab === "sync");
+      document.getElementById("nav-settings").classList.toggle("on", tab === "settings");
+    }
+
+    // Words worth spotting at a glance: problems in red, good news in green
+    const HL = /(not reachable|not connected|not found|no companies|failed|failure|errors?|rejected|missing|incomplete|cannot|could not|invalid|skipped|partial)|(connected|successful|success|created|linked|complete[d]?|running|added|updated|discovered|saved)/gi;
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+
+    function setBanner(text, kind) {
+      const b = document.getElementById("statusBanner");
+      if (!b) return;
+      b.className = "banner" + (kind === "ok" ? " ok" : kind === "bad" ? " bad" : "");
+      document.getElementById("statusText").textContent = String(text).replace(/[✅❌]/g, "").trim();
+    }
+
+    function log(line) {
+      const div = document.createElement("div");
+      let cls = "log-line";
+      if (line.includes("✅")) cls += " ok";
+      else if (line.includes("❌")) cls += " bad";
+      else if (line.includes("⚠")) cls += " warn";
+      else if (/^=+|SYNC SUMMARY/.test(line.trim())) cls += " head";
+      div.className = cls;
+      div.innerHTML = escapeHtml(line).replace(HL, (m, bad) =>
+        `<span class="${bad ? "w-bad" : "w-ok"}">${m}</span>`) || "&nbsp;";
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+
+      // surface the important lines in the banner too
+      if (line.includes("❌")) setBanner(line, "bad");
+      else if (line.includes("✅")) setBanner(line, "ok");
+    }
+    window.bridge.onLog(log);
+
+    async function loadCfg() {
+      const cfg = await window.bridge.getConfig();
+      document.getElementById("tallyUrl").value = cfg.tallyUrl || "http://localhost:9000";
+      document.getElementById("tenantUrl").value = cfg.tenantUrl || "";
+      document.getElementById("secretKey").value = cfg.secretKey || "";
+      document.getElementById("verboseChk").checked = cfg.verboseLog === true;
+      document.getElementById("syncOnTallyStart").checked = cfg.syncOnTallyStart === true;
+      document.getElementById("syncEveryMinutes").value = cfg.syncEveryMinutes || 30;
+      document.getElementById("syncDaily").checked = cfg.syncDaily === true;
+      document.getElementById("notifyOnSync").checked = cfg.notifyOnSync !== false;
+
+      document.getElementById("autoSyncTime").value = cfg.autoSyncTime || "09:00";
+      updateAutoNote(cfg);
+      if (cfg.tenantUrl && cfg.formUrls && cfg.formUrls.companies) {
+        document.getElementById("ajemsDot").className = "dot ok";
+        document.getElementById("ajemsStatus").textContent = "AJEMS: connected";
+        setSideStatus(true);
+      }
+      for (const e of ENTITIES) {
+        document.getElementById("furl_" + e).value = (cfg.formUrls && cfg.formUrls[e]) || "";
+      }
+    }
+
+    document.getElementById("connectBtn").onclick = async () => {
+      const btn = document.getElementById("connectBtn");
+      btn.disabled = true; btn.textContent = "Connecting...";
+      logEl.innerHTML = ""; log("Connecting...");
+      const cfg = await window.bridge.getConfig();
+      cfg.tenantUrl = document.getElementById("tenantUrl").value.trim();
+      cfg.secretKey = document.getElementById("secretKey").value.trim();
+      await window.bridge.saveConfig(cfg);
+      // Step 1 of Connect: verify Tally is reachable
+      log("Checking Tally connection...");
+      const tallyOk = await checkTally(true);
+      log(tallyOk ? "✅ Tally: connected" : "Tally is not reachable - you can still connect AJEMS, but open Tally before running a sync.");
+
+      // Step 2 of Connect: verify AJEMS workspace + link forms
+      const r = await window.bridge.connectAjems();
+      if (r.ok) {
+        document.getElementById("ajemsDot").className = "dot ok";
+        document.getElementById("ajemsStatus").textContent = "AJEMS: connected";
+        setSideStatus(true);
+        await loadCfg();
+      } else {
+        document.getElementById("ajemsDot").className = "dot bad";
+        document.getElementById("ajemsStatus").textContent = "AJEMS: not connected";
+      setSideStatus(false);
+      }
+      btn.disabled = false; btn.textContent = "AJEMS Connect";
+    };
+
+    document.getElementById("disconnectBtn").onclick = async () => {
+      await window.bridge.disconnect();
+      document.getElementById("tenantUrl").value = "";
+      document.getElementById("secretKey").value = "";
+      await loadCfg();
+      document.getElementById("ajemsDot").className = "dot";
+      document.getElementById("ajemsStatus").textContent = "AJEMS: not connected";
+      setSideStatus(false);
+      log("Disconnected. Organisation name, Secret Key and linked form URLs have been cleared from this computer.");
+      showTab("sync");
+    };
+
+    document.getElementById("saveBtn").onclick = async () => {
+      const cfg = await window.bridge.getConfig();
+      cfg.tallyUrl = document.getElementById("tallyUrl").value.trim();
+      cfg.verboseLog = document.getElementById("verboseChk").checked;
+      cfg.syncOnTallyStart = document.getElementById("syncOnTallyStart").checked;
+      cfg.syncDaily = document.getElementById("syncDaily").checked;
+      cfg.notifyOnSync = document.getElementById("notifyOnSync").checked;
+      // Automatic sync needs the connector running, so it starts with Windows on its own
+      cfg.startWithWindows = cfg.syncOnTallyStart || cfg.syncDaily;
+      cfg.syncEveryMinutes = Math.max(5, Math.min(1440, Number(document.getElementById("syncEveryMinutes").value) || 30));
+      cfg.autoSyncTime = document.getElementById("autoSyncTime").value || "09:00";
+      cfg.formUrls = cfg.formUrls || {};
+      for (const e of ENTITIES) {
+        cfg.formUrls[e] = document.getElementById("furl_" + e).value.trim();
+      }
+      await window.bridge.saveConfig(cfg);
+      log("Settings saved.");
+      showTab("sync");
+    };
+
+    async function checkTally(quiet) {
+      tallyStatus.textContent = "Tally: checking";
+      const r = await window.bridge.testTally();
+      if (r.ok) { dot.className = "dot ok"; tallyStatus.textContent = "Tally: connected"; }
+      else { dot.className = "dot bad"; tallyStatus.textContent = "Tally: not reachable"; }
+      if (!quiet) {
+        if (r.ok) {
+          log("✅ Tally: connected on " + (r.url || "the configured address"));
+        } else {
+          log("❌ Tally is not reachable.");
+          log("   Open Tally Prime with your company loaded, and make sure the port is on:");
+          log("   F1 > Settings > Connectivity > Client/Server configuration > acts as \"Both\".");
+        }
+      }
+      return r.ok;
+    }
+
+    testBtn.onclick = async () => {
+      testBtn.disabled = true;
+      const t = testBtn.textContent;
+      testBtn.textContent = "Checking...";
+      log("Checking Tally connection...");
+      await checkTally(false);
+      testBtn.textContent = t;
+      testBtn.disabled = false;
+    };
+
+    syncBtn.onclick = async () => {
+      syncBtn.disabled = true;
+      syncBtn.textContent = "Syncing...";
+      logEl.innerHTML = ""; log("Starting sync...");
+      const ok = await checkTally(true);
+      if (!ok) {
+        log("❌ Tally is not reachable. Please open Tally with your company loaded (port 9000, mode: Both) and try again.");
+      } else {
+        await window.bridge.runSync();
+      }
+      syncBtn.disabled = false;
+      syncBtn.innerHTML = SYNC_BTN_HTML;
+    };
+
+    function updateAutoNote(cfg) {
+      const bits = [];
+      if (cfg.syncOnTallyStart) bits.push(`every ${cfg.syncEveryMinutes || 30} minute(s) while Tally is open`);
+      if (cfg.syncDaily) bits.push(`every day at ${cfg.autoSyncTime || "09:00"}`);
+      document.getElementById("autoNote").textContent = bits.length
+        ? "Your data will sync " + bits.join(" and ") + ". The connector runs quietly in the background - you do not need to open it."
+        : "Automatic sync is off - use the Run Sync button whenever you want to send data.";
+    }
+
+    // The main process drives background syncs; reflect their state in the UI
+    window.bridge.onSyncState((running) => {
+      syncBtn.disabled = running;
+      if (running) syncBtn.textContent = "Syncing..."; else syncBtn.innerHTML = SYNC_BTN_HTML;
+    });
+
+    /* ---------- update banner ---------- */
+    const updateBar = document.getElementById("updateBar");
+    const updateText = document.getElementById("updateText");
+    const updateBtn = document.getElementById("updateBtn");
+
+    function showUpdate(version) {
+      updateText.innerHTML = `Version <b>${version}</b> is available. Your settings are kept.`;
+      updateBtn.style.display = "";
+      updateBtn.disabled = false;
+      updateBtn.textContent = "Download update";
+      updateBar.style.display = "";
+      updateBtn.onclick = async () => {
+        updateBtn.disabled = true;
+        updateBtn.textContent = "Downloading...";
+        const r = await window.bridge.downloadUpdate();
+        if (!r.ok) {
+          updateText.textContent = "Could not download the update: " + (r.error || "unknown error");
+          updateBar.className = "banner bad";
+          updateBtn.style.display = "none";
+        }
+      };
+    }
+
+    window.bridge.onUpdateAvailable((i) => showUpdate(i.version));
+    window.bridge.onUpdateProgress((pct) => { updateBtn.textContent = `Downloading ${pct}%`; });
+    window.bridge.onUpdateDownloaded(() => {
+      updateBar.className = "banner ok";
+      updateText.textContent = "Update downloaded. Restart to finish installing.";
+      updateBtn.disabled = false;
+      updateBtn.textContent = "Restart now";
+      updateBtn.onclick = () => window.bridge.installUpdate();
+    });
+    window.bridge.onUpdateError((msg) => {
+      updateBar.className = "banner bad";
+      updateText.textContent = "Update check failed: " + msg;
+      updateBtn.style.display = "none";
+      updateBar.style.display = "";
+    });
+    window.bridge.updateStatus().then((u) => { if (u && u.version) showUpdate(u.version); });
+
+    loadCfg().then(() => checkTally(true));
+  </script>
+</body>
+</html>

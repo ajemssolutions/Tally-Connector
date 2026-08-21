@@ -1,0 +1,84 @@
+name: Build and publish installer
+
+# Push a version tag (v2.0.1) to start a release, or run it by hand to test a build.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------- build
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build the Windows installer
+        run: npx electron-builder --win --publish never
+
+      # dist/ now holds:  Tally Connector Setup <version>.exe
+      #                   latest.yml          <- the update feed
+      #                   *.blockmap          <- lets updates download only what changed
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          if-no-files-found: error
+
+  # ------------------------------------------------------- publish (gated)
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    # Add a required reviewer to this environment in
+    # Settings > Environments > production, and GitHub will wait for your
+    # approval before anything reaches the download server.
+    environment: production
+    steps:
+      - name: Download the build
+        uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist
+
+      - name: Upload to the download server
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # Cloudflare R2:  https://<account-id>.r2.cloudflarestorage.com
+          # AWS S3:         leave STORAGE_ENDPOINT empty
+          ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+          BUCKET: ${{ secrets.STORAGE_BUCKET }}
+        run: |
+          FLAGS=""
+          if [ -n "$ENDPOINT" ]; then FLAGS="--endpoint-url $ENDPOINT"; fi
+
+          # The installer and blockmaps can be cached for a long time - their
+          # names change every release. latest.yml must never be cached, or
+          # clients keep seeing the old version.
+          aws s3 cp dist/ "s3://$BUCKET/tally-connector/" $FLAGS \
+            --recursive --exclude "*" --include "*.exe" --include "*.blockmap" \
+            --cache-control "public,max-age=31536000,immutable"
+
+          aws s3 cp dist/latest.yml "s3://$BUCKET/tally-connector/latest.yml" $FLAGS \
+            --cache-control "no-cache,must-revalidate" \
+            --content-type "text/yaml"
+
+      - name: Done
+        run: echo "Published. Users will see the update within six hours, or on next launch."
