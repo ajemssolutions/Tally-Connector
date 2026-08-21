@@ -44,9 +44,8 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    # Add a required reviewer to this environment in
-    # Settings > Environments > production, and GitHub will wait for your
-    # approval before anything reaches the download server.
+    # Add a required reviewer under Settings > Environments > production and
+    # GitHub will wait for your approval before anything reaches the server.
     environment: production
     steps:
       - name: Download the build
@@ -57,27 +56,31 @@ jobs:
 
       - name: Upload to the download server
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_KEY }}
-          AWS_DEFAULT_REGION: auto
-          # Cloudflare R2:  https://<account-id>.r2.cloudflarestorage.com
-          # AWS S3:         leave STORAGE_ENDPOINT empty
-          ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
-          BUCKET: ${{ secrets.STORAGE_BUCKET }}
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          # Folder on the server, e.g. public_html/downloads/tally-connector
+          FTP_PATH: ${{ secrets.FTP_PATH }}
         run: |
-          FLAGS=""
-          if [ -n "$ENDPOINT" ]; then FLAGS="--endpoint-url $ENDPOINT"; fi
+          if [ -z "$FTP_HOST" ]; then
+            echo "No download server configured yet - skipping upload."
+            echo "The installer is still available under Artifacts on this run."
+            exit 0
+          fi
 
-          # The installer and blockmaps can be cached for a long time - their
-          # names change every release. latest.yml must never be cached, or
-          # clients keep seeing the old version.
-          aws s3 cp dist/ "s3://$BUCKET/tally-connector/" $FLAGS \
-            --recursive --exclude "*" --include "*.exe" --include "*.blockmap" \
-            --cache-control "public,max-age=31536000,immutable"
+          upload() {
+            echo "Uploading: $(basename "$1")"
+            curl --fail --silent --show-error --ftp-create-dirs \
+                 --ftp-ssl -k \
+                 -T "$1" -u "$FTP_USER:$FTP_PASSWORD" \
+                 "ftp://$FTP_HOST/$FTP_PATH/$(basename "$1")"
+          }
 
-          aws s3 cp dist/latest.yml "s3://$BUCKET/tally-connector/latest.yml" $FLAGS \
-            --cache-control "no-cache,must-revalidate" \
-            --content-type "text/yaml"
+          # Installer and blockmap first, then the feed - so clients never see a
+          # latest.yml pointing at a file that has not finished uploading.
+          for f in dist/*.exe dist/*.blockmap; do
+            [ -e "$f" ] && upload "$f"
+          done
+          upload dist/latest.yml
 
-      - name: Done
-        run: echo "Published. Users will see the update within six hours, or on next launch."
+          echo "Done. Users will see the update within six hours, or on next launch."
