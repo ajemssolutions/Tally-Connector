@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # needed to create the GitHub release
 
 jobs:
   # ---------------------------------------------------------------- build
@@ -38,6 +38,37 @@ jobs:
             dist/latest.yml
             dist/*.blockmap
           if-no-files-found: error
+
+  # ------------------------------------------- GitHub release (public link)
+  github_release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the build
+        uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist
+
+      - name: Attach the installer to a release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          generate_release_notes: true
+          body: |
+            ## Tally Connector - Windows installer
+
+            Download **Tally Connector Setup .exe** below and run it. Nothing else to install.
+
+            Windows may show a SmartScreen warning the first time because the app is
+            not code-signed - click **More info** then **Run anyway**.
+
+            ### After installing
+            1. Open Tally Prime with your company loaded
+               (F1 > Settings > Connectivity > Client/Server configuration > acts as "Both")
+            2. Open Tally Connector, enter your AJEMS organisation name and secret key
+            3. Click **AJEMS Connect**, then **Run Sync**
 
   # ------------------------------------------------------- publish (gated)
   publish:
@@ -82,5 +113,11 @@ jobs:
             [ -e "$f" ] && upload "$f"
           done
           upload dist/latest.yml
+
+          # A second copy under a fixed name, so the link you give customers
+          # never changes when the version does.
+          SETUP=$(ls dist/*.exe | head -1)
+          cp "$SETUP" "dist/TallyConnectorSetup.exe"
+          upload "dist/TallyConnectorSetup.exe"
 
           echo "Done. Users will see the update within six hours, or on next launch."
