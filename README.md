@@ -42,13 +42,22 @@ npm start          # run it locally
 npm run dist       # build dist/Tally Connector Setup <version>.exe
 ```
 
-Releases are built automatically: push a tag and GitHub Actions builds the
-Windows installer and attaches it to the release.
+Node and npm are only needed if you want to run or build locally. To publish a
+release you need Git alone - GitHub Actions installs Node on its own runner.
+
+**Releasing without npm installed:** edit `"version"` in `package.json`, then
 
 ```bash
-npm version patch          # bumps package.json and creates the tag
+git add package.json
+git commit -m "v2.0.1"
+git tag v2.0.1
 git push && git push --tags
 ```
+
+**With npm installed,** `npm version patch` does the same in one command.
+
+The tag must match the version in `package.json` - the installer filename and
+the update feed both come from it.
 
 ### Layout
 

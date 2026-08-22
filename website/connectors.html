@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Download connectors - AJEMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Same tokens as the AJEMS design system */
+  :root{
+    --teal:#2663EB; --teal-600:#1B51CE; --teal-700:#1946B4; --teal-050:#EEF3FE;
+    --bg:#F7F9FC; --surface:#fff; --surface-2:#F4F7FC;
+    --border:#E8EDF5; --border-2:#D8E1EE;
+    --text:#1A2233; --muted:#5B6B85; --subtle:#7C8AA0;
+    --ok:#12B76A; --ok-bg:#E7F7EF;
+    --r-md:12px; --r-sm:8px;
+    --e-low:0 1px 2px rgba(16,32,64,.05); --e-hover:0 4px 12px rgba(16,32,64,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:Inter,system-ui,sans-serif}
+  body{background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+
+  header{background:var(--surface);border-bottom:1px solid var(--border)}
+  header .wrap{height:64px;display:flex;align-items:center;gap:14px}
+  .logo{font-family:'Space Grotesk',Inter,sans-serif;font-weight:700;font-size:19px;letter-spacing:-.01em}
+  header nav{margin-left:auto;display:flex;gap:22px;font-size:13px;color:var(--muted)}
+  header nav a{color:inherit;text-decoration:none}
+  header nav a:hover{color:var(--text)}
+
+  .hero{padding:56px 0 32px;text-align:center}
+  .hero h1{font-size:32px;font-weight:700;letter-spacing:-.025em}
+  .hero p{color:var(--muted);font-size:15px;margin-top:10px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;padding-bottom:20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+        box-shadow:var(--e-low);padding:24px;display:flex;flex-direction:column;
+        transition:box-shadow .18s,border-color .18s,transform .18s}
+  .card:hover{border-color:var(--teal);box-shadow:var(--e-hover);transform:translateY(-2px)}
+  .card.soon:hover{border-color:var(--border);box-shadow:var(--e-low);transform:none}
+  .ic{width:46px;height:46px;border-radius:var(--r-md);background:var(--teal-050);color:var(--teal);
+      display:grid;place-items:center;margin-bottom:14px}
+  .ic svg{width:23px;height:23px}
+  .card h3{font-size:16px;font-weight:600}
+  .card p{color:var(--muted);font-size:13px;margin-top:6px;flex:1}
+  .meta{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:11.5px;color:var(--subtle)}
+  .pill{display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;
+        padding:3px 10px;border-radius:999px;background:var(--ok-bg);color:#0a7b46}
+  .pill.soon{background:var(--surface-2);color:var(--muted)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;
+       background:var(--teal);color:#fff;font-weight:600;font-size:13.5px;padding:11px 18px;
+       border:none;border-radius:var(--r-md);cursor:pointer;text-decoration:none;transition:background .12s}
+  .btn:hover{background:var(--teal-600)}
+  .btn svg{width:16px;height:16px}
+  .btn.disabled{background:var(--surface-2);color:var(--subtle);cursor:default;pointer-events:none}
+
+  .steps{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+         padding:26px;margin:26px 0 60px}
+  .steps h2{font-size:17px;font-weight:600;margin-bottom:4px}
+  .steps .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  ol{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:16px}
+  ol li{counter-increment:s;display:flex;gap:14px;font-size:13.5px}
+  ol li::before{content:counter(s);flex:0 0 26px;height:26px;border-radius:50%;
+    background:var(--teal-050);color:var(--teal-700);font-weight:700;font-size:12px;
+    display:grid;place-items:center}
+  ol li b{font-weight:600}
+  code{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+       padding:1px 6px;font-family:'SF Mono',Consolas,monospace;font-size:12px}
+  .note{margin-top:20px;background:var(--teal-050);border:1px solid #DBE4FF;border-radius:11px;
+        padding:13px 15px;font-size:12.5px;color:#1E3A8A;line-height:1.6}
+  footer{border-top:1px solid var(--border);background:var(--surface);padding:22px 0;
+         font-size:12.5px;color:var(--subtle);text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="logo">AJEMS</div>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/connectors">Connectors</a>
+      <a href="/support">Support</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <h1>Connectors</h1>
+    <p>Bring data from the tools you already use straight into your AJEMS workspace.</p>
+  </section>
+
+  <section class="grid">
+
+    <!-- TALLY -->
+    <div class="card">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+      </div>
+      <h3>Tally Connector</h3>
+      <p>Syncs companies, ledgers, vouchers and outstanding bills from Tally Prime into AJEMS. Runs quietly in the background and keeps everything up to date.</p>
+      <div class="meta">
+        <span class="pill">Available</span>
+        <span>Windows 10 and 11</span>
+        <span id="tcVersion"></span>
+      </div>
+      <a class="btn" id="tcDownload" href="https://downloads.ajems.in/tally-connector/Tally%20Connector%20Setup%202.0.0.exe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for Windows
+      </a>
+    </div>
+
+    <!-- EXCEL -->
+    <div class="card soon">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="19"/><line x1="15" y1="13" x2="9" y2="19"/></svg>
+      </div>
+      <h3>Excel Bridge</h3>
+      <p>Import spreadsheets into AJEMS forms, with column mapping and duplicate handling.</p>
+      <div class="meta"><span class="pill soon">Coming soon</span></div>
+      <span class="btn disabled">Not yet available</span>
+    </div>
+
+    <!-- WOOCOMMERCE -->
+    <div class="card soon">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      </div>
+      <h3>WooCommerce Connector</h3>
+      <p>Products, orders, customers and stock levels, synced from your store.</p>
+      <div class="meta"><span class="pill soon">Coming soon</span></div>
+      <span class="btn disabled">Not yet available</span>
+    </div>
+
+  </section>
+
+  <section class="steps">
+    <h2>Setting up the Tally Connector</h2>
+    <div class="sub">Takes about two minutes. No admin password needed.</div>
+    <ol>
+      <li><span><b>Run the installer</b> you just downloaded. The connector installs for your Windows account and adds a desktop shortcut.</span></li>
+      <li><span><b>Open Tally Prime</b> with your company loaded, and turn the port on: <code>F1 &gt; Settings &gt; Connectivity &gt; Client/Server configuration</code> &rarr; acts as <b>Both</b>.</span></li>
+      <li><span><b>Open Tally Connector</b> and enter your AJEMS <b>organisation name</b> and <b>secret key</b>, then click <b>AJEMS Connect</b>. Everything it needs is set up in your workspace automatically.</span></li>
+      <li><span><b>Click Run Sync.</b> That is it - your Tally data appears in AJEMS. Turn on automatic sync in Settings and you never have to think about it again.</span></li>
+    </ol>
+    <div class="note">
+      Windows may show a <b>"Windows protected your PC"</b> message the first time, because the app is
+      not yet code-signed. Click <b>More info</b>, then <b>Run anyway</b>. The connector only talks to
+      Tally on your own computer and to your AJEMS workspace.
+    </div>
+  </section>
+
+</div>
+
+<footer>AJEMS &middot; Need help? Write to support@ajems.in</footer>
+
+<script>
+  /* Always point at the current release: read the version from the update feed
+     that the build pipeline publishes next to the installer. */
+  (async () => {
+    const BASE = "https://downloads.ajems.in/tally-connector/";
+    try {
+      const text = await (await fetch(BASE + "latest.yml", { cache: "no-store" })).text();
+      const version = (text.match(/^version:\s*(.+)$/m) || [])[1]?.trim();
+      const file = (text.match(/^path:\s*(.+)$/m) || [])[1]?.trim();
+      if (version) document.getElementById("tcVersion").textContent = "Version " + version;
+      if (file) document.getElementById("tcDownload").href = BASE + encodeURIComponent(file);
+    } catch {
+      /* feed unreachable - the hard-coded link above still works */
+    }
+  })();
+</script>
+
+</body>
+</html>

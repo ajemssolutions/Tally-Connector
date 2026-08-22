@@ -2,9 +2,10 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage } = r
 const path = require("path");
 const { runSync, testTally, loadConfig, saveConfig, connectAjems, disconnect } = require("./sync");
 
-/* Auto-update: the app checks quietly and tells the user. Nothing downloads or
-   installs on its own - the user chooses when. Wrapped so the portable build,
-   which has no updater bundled, still runs. */
+/* Auto-update is currently disabled - setupUpdater() is not called. The wiring
+   below stays so it can be switched on once the download server is live: add
+   electron-updater back to dependencies, set build.publish, and un-comment the
+   setupUpdater() call in the ready handler. */
 let autoUpdater = null;
 try { ({ autoUpdater } = require("electron-updater")); } catch { /* not packaged */ }
 
@@ -213,7 +214,7 @@ if (!gotLock) {
     createWindow(!startHidden);
     buildTray();
     startSchedulers();
-    setupUpdater();
+    // setupUpdater();   // updates are off for now - re-enable when the download server is live
 
     // Keep the OS setting in step with the saved preference
     const cfg = loadConfig();

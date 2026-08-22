@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "axios": "^1.7.0",
-    "fast-xml-parser": "^4.4.0",
-    "electron-updater": "^6.3.0"
+    "fast-xml-parser": "^4.4.0"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -28,8 +27,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
-      "allowElevation": false,
+      "perMachine": true,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": true,
       "createDesktopShortcut": true,
@@ -39,13 +38,6 @@
     "files": [
       "src/**/*",
       "package.json"
-    ],
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://downloads.ajems.in/tally-connector/",
-        "channel": "latest"
-      }
     ]
   }
 }

@@ -414,6 +414,7 @@
     const updateBar = document.getElementById("updateBar");
     const updateText = document.getElementById("updateText");
     const updateBtn = document.getElementById("updateBtn");
+    let downloadStarted = false;   // update errors only matter once the user asked for one
 
     function showUpdate(version) {
       updateText.innerHTML = `Version <b>${version}</b> is available. Your settings are kept.`;
@@ -424,6 +425,7 @@
       updateBtn.onclick = async () => {
         updateBtn.disabled = true;
         updateBtn.textContent = "Downloading...";
+        downloadStarted = true;
         const r = await window.bridge.downloadUpdate();
         if (!r.ok) {
           updateText.textContent = "Could not download the update: " + (r.error || "unknown error");
@@ -443,8 +445,10 @@
       updateBtn.onclick = () => window.bridge.installUpdate();
     });
     window.bridge.onUpdateError((msg) => {
+      // A background check that cannot reach the server is not the user's problem
+      if (!downloadStarted) return;
       updateBar.className = "banner bad";
-      updateText.textContent = "Update check failed: " + msg;
+      updateText.textContent = "Could not download the update: " + msg;
       updateBtn.style.display = "none";
       updateBar.style.display = "";
     });

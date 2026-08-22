@@ -114,10 +114,23 @@ themselves with every release. Excel and WooCommerce cards are there as
 
 ## Releasing a version
 
+You only need **Git** on your machine. Node and npm are never required for this -
+GitHub installs them on its build runner.
+
+Open `package.json`, change `"version": "2.0.0"` to `"2.0.1"`, save, then:
+
 ```powershell
-npm version patch          # 2.0.0 -> 2.0.1, commits and tags
-git push && git push --tags
+git add package.json
+git commit -m "v2.0.1"
+git tag v2.0.1
+git push
+git push --tags
 ```
+
+(If you do have npm installed, `npm version patch` does all of that in one step.)
+
+The tag and the version in `package.json` must match - the installer filename and
+the update feed are both built from it.
 
 Then:
 
@@ -130,7 +143,7 @@ Existing users see the update within six hours, or the next time they open the
 app. They click **Download update**, then **Restart now**. Their settings and
 connection are kept.
 
-Use `npm version minor` for a feature release (2.0.0 → 2.1.0).
+For a feature release use 2.1.0 instead of 2.0.1 - same steps.
 
 ### Testing without releasing
 
