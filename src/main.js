@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage } = require("electron");
 const path = require("path");
 const { runSync, testTally, loadConfig, saveConfig, connectAjems, disconnect } = require("./sync");
+const hub = require("./hub");
 
 /* Auto-update is currently disabled - setupUpdater() is not called. The wiring
    below stays so it can be switched on once the download server is live: add
@@ -114,11 +115,25 @@ async function doSync(reason) {
     notify(failed ? "Tally sync finished with errors" : "Tally sync complete",
       `${created} added, ${updated} updated${failed ? `, ${failed} failed` : ""}.`);
     refreshTrayMenu("Idle");
+    // Best-effort status report - never awaited, never allowed to affect the sync
+    const total = hub.addRecords(created + updated);
+    hub.report({
+      status: "connected",
+      records: total,
+      event: {
+        kind: failed ? "error" : "ok",
+        text: `Sync (${reason}) - ${created} added, ${updated} updated${failed ? `, ${failed} failed` : ""}`,
+      },
+    });
     return { ok: true, summary: stats };
   } catch (err) {
     logToUI("❌ Fatal: " + err.message);
     notify("Tally sync failed", err.message.slice(0, 120));
     refreshTrayMenu("Idle");
+    hub.report({
+      status: "connected",
+      event: { kind: "error", text: `Sync (${reason}) failed - ${String(err.message).slice(0, 160)}` },
+    });
     return { ok: false, error: err.message };
   } finally {
     const c = loadConfig();
@@ -216,6 +231,9 @@ if (!gotLock) {
     startSchedulers();
     // setupUpdater();   // updates are off for now - re-enable when the download server is live
 
+    // Already paired? Report in straight away and keep the heartbeat going.
+    if (hub.isPaired()) hub.start(logToUI);
+
     // Keep the OS setting in step with the saved preference
     const cfg = loadConfig();
     if (cfg.startWithWindows === true) {
@@ -238,8 +256,19 @@ ipcMain.handle("save-config", (_e, cfg) => {
   refreshTrayMenu(syncRunning ? "Syncing..." : "Idle");
   return { ok: true };
 });
-ipcMain.handle("connect-ajems", async () => await connectAjems(logToUI));
-ipcMain.handle("disconnect", () => ({ ok: disconnect() }));
+ipcMain.handle("connect-ajems", async () => {
+  const res = await connectAjems(logToUI);
+  // Appear under Active Connectors immediately, then heartbeat every 5 minutes
+  if (res && res.ok) hub.start(logToUI, { kind: "ok", text: "Paired with this device" });
+  return res;
+});
+ipcMain.handle("disconnect", async () => {
+  // Report first - disconnect() wipes the org and key this needs
+  await hub.reportDisconnected(logToUI);
+  const ok = disconnect();
+  hub.resetRecords();
+  return { ok };
+});
 ipcMain.handle("test-tally", async () => await testTally(logToUI));
 ipcMain.handle("run-sync", async () => await doSync("manual"));
 

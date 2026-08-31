@@ -1149,4 +1149,4 @@ async function connectAjems(log) {
   return { ok: true, matched };
 }
 
-module.exports = { runSync, testTally, loadConfig, saveConfig, connectAjems, disconnect };
+module.exports = { runSync, testTally, loadConfig, saveConfig, connectAjems, disconnect, resolveTenant };
