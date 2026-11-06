@@ -83,6 +83,8 @@ async function report(opts = {}) {
     const org = t && t.ok ? t.org : "";
     const secretKey = String(cfg.secretKey || "").trim();
     if (!org || !secretKey) return { ok: false, reason: "not-paired" };
+    // The Connections Hub knows live workspaces only; a testing-server key is never sent to it.
+    if (t.staging) return { ok: false, reason: "testing-server" };
 
     const body = { org, secretKey, device: deviceId(), status };
 

@@ -1,0 +1,246 @@
+{
+  "format": 1,
+  "id": "tally-connector",
+  "name": "Tally Connector",
+  "category": "Finance",
+  "icon": "RefreshCw",
+  "color": "#0891B2",
+  "tagline": "Your Tally Prime companies, ledgers and vouchers inside AJEMS, kept up to date by the Tally Connector.",
+  "desc": "Install this app, then open the Tally Connector on the computer that runs Tally Prime and connect it with your organisation name and secret key. Every sync brings in the companies, ledger groups, ledgers, vouchers and their lines; new records are added, changed ones are updated and nothing is duplicated. The dashboard shows sales, purchases, receipts and payments, leaving out cancelled vouchers.",
+  "app": {
+    "name": "Tally Connector",
+    "desc": "Companies, ledgers and vouchers synced from Tally Prime."
+  },
+  "modules": [
+    {
+      "key": "companies",
+      "name": "Companies",
+      "view": "cards",
+      "askOnSave": false,
+      "desc": "Each company open in Tally Prime, with its totals for the financial year being synced.",
+      "fields": [
+        { "name": "Company Name", "type": "text", "required": true },
+        { "name": "Status", "type": "dropdown", "options": ["Connected", "Disconnected"] },
+        { "name": "Last Sync At", "type": "text" },
+        { "name": "Sales", "type": "number" },
+        { "name": "Purchases", "type": "number" },
+        { "name": "Receipts", "type": "number" },
+        { "name": "Payments", "type": "number" },
+        { "name": "Last Alter Id", "type": "number" },
+        { "name": "Company Guid", "type": "text" }
+      ]
+    },
+    {
+      "key": "ledger_groups",
+      "name": "Ledger Groups",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "Tally's account groups: Sundry Debtors, Bank Accounts, Sales Accounts and the rest.",
+      "fields": [
+        { "name": "Name", "type": "text", "required": true },
+        { "name": "Parent Group", "type": "text" },
+        { "name": "Company", "type": "text" },
+        { "name": "Is Revenue", "type": "checkbox", "options": ["Yes", "No"] },
+        { "name": "Is Deemed Positive", "type": "checkbox", "options": ["Yes", "No"] },
+        { "name": "Sort Position", "type": "number" },
+        { "name": "Alter Id", "type": "number" },
+        { "name": "Tally Guid", "type": "text" },
+        { "name": "Synced At", "type": "text" }
+      ]
+    },
+    {
+      "key": "ledgers",
+      "name": "Ledgers",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "Every ledger with its group and balances as Tally sends them: a minus balance is a debit.",
+      "views": [
+        { "name": "Debtors", "where": [ { "field": "Group", "op": "is", "value": "Sundry Debtors" } ] },
+        { "name": "Creditors", "where": [ { "field": "Group", "op": "is", "value": "Sundry Creditors" } ] },
+        { "name": "Bank", "where": [ { "field": "Group", "op": "is", "value": "Bank Accounts" } ] }
+      ],
+      "fields": [
+        { "name": "Name", "type": "text", "required": true },
+        { "name": "Group", "type": "text" },
+        { "name": "Company", "type": "text" },
+        { "name": "Opening Balance", "type": "number" },
+        { "name": "Closing Balance", "type": "number" },
+        { "name": "Is Billwise", "type": "checkbox", "options": ["Yes", "No"] },
+        { "name": "Mobile", "type": "text" },
+        { "name": "Email", "type": "text" },
+        { "name": "GSTIN", "type": "text" },
+        { "name": "State", "type": "text" },
+        { "name": "Credit Limit", "type": "number" },
+        { "name": "Credit Period Days", "type": "number" },
+        { "name": "Alter Id", "type": "number" },
+        { "name": "Tally Guid", "type": "text" },
+        { "name": "Synced At", "type": "text" }
+      ]
+    },
+    {
+      "key": "vouchers",
+      "name": "Vouchers",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "Every voucher of the current financial year: sales, purchases, receipts, payments, journals and contras.",
+      "calendar": { "field": "Voucher Date", "label": "Party Ledger Name" },
+      "views": [
+        { "name": "Sales", "where": [ { "field": "Voucher Type", "op": "is", "value": "Sales" }, { "field": "Is Cancelled", "op": "is", "value": "No" } ] },
+        { "name": "Purchases", "where": [ { "field": "Voucher Type", "op": "is", "value": "Purchase" }, { "field": "Is Cancelled", "op": "is", "value": "No" } ] },
+        { "name": "Receipts", "where": [ { "field": "Voucher Type", "op": "is", "value": "Receipt" }, { "field": "Is Cancelled", "op": "is", "value": "No" } ] },
+        { "name": "Payments", "where": [ { "field": "Voucher Type", "op": "is", "value": "Payment" }, { "field": "Is Cancelled", "op": "is", "value": "No" } ] },
+        { "name": "Cancelled", "where": [ { "field": "Is Cancelled", "op": "is", "value": "Yes" } ] }
+      ],
+      "fields": [
+        { "name": "Voucher Number", "type": "text" },
+        { "name": "Voucher Type", "type": "text" },
+        { "name": "Voucher Date", "type": "date" },
+        { "name": "Party Ledger Name", "type": "text" },
+        { "name": "Amount", "type": "number" },
+        { "name": "Narration", "type": "para" },
+        { "name": "Reference", "type": "text" },
+        { "name": "Is Cancelled", "type": "checkbox", "options": ["Yes", "No"] },
+        { "name": "Company", "type": "text" },
+        { "name": "Alter Id", "type": "number" },
+        { "name": "Tally Guid", "type": "text" },
+        { "name": "Synced At", "type": "text" }
+      ]
+    },
+    {
+      "key": "voucher_entries",
+      "name": "Voucher Entries",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "The ledger lines of each voucher, with the amount as Tally sends it and whether it is a debit.",
+      "fields": [
+        { "name": "Ledger Name", "type": "text" },
+        { "name": "Amount", "type": "number" },
+        { "name": "Is Debit", "type": "checkbox", "options": ["Yes", "No"] },
+        { "name": "Voucher Number", "type": "text" },
+        { "name": "Voucher Type", "type": "text" },
+        { "name": "Voucher Date", "type": "date" },
+        { "name": "Company", "type": "text" },
+        { "name": "Voucher Guid", "type": "text" },
+        { "name": "Line Id", "type": "text" }
+      ]
+    },
+    {
+      "key": "voucher_items",
+      "name": "Voucher Items",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "The stock item lines of each voucher: quantity, rate, amount, GST rate and HSN code.",
+      "fields": [
+        { "name": "Stock Item Name", "type": "text" },
+        { "name": "Qty", "type": "number" },
+        { "name": "Rate", "type": "number" },
+        { "name": "Amount", "type": "number" },
+        { "name": "GST Rate", "type": "number" },
+        { "name": "HSN Code", "type": "text" },
+        { "name": "Voucher Number", "type": "text" },
+        { "name": "Voucher Type", "type": "text" },
+        { "name": "Voucher Date", "type": "date" },
+        { "name": "Company", "type": "text" },
+        { "name": "Voucher Guid", "type": "text" },
+        { "name": "Line Id", "type": "text" }
+      ]
+    },
+    {
+      "key": "outstanding",
+      "name": "Outstanding",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "Bill-wise receivables and payables. The connector does not fill this yet.",
+      "views": [
+        { "name": "Receivable", "where": [ { "field": "Type", "op": "is", "value": "Receivable" } ] },
+        { "name": "Payable", "where": [ { "field": "Type", "op": "is", "value": "Payable" } ] }
+      ],
+      "fields": [
+        { "name": "Bill Ref", "type": "text" },
+        { "name": "Ledger", "type": "text" },
+        { "name": "Type", "type": "dropdown", "options": ["Receivable", "Payable"] },
+        { "name": "Bill Date", "type": "date" },
+        { "name": "Due Date", "type": "date" },
+        { "name": "Pending Amount", "type": "number" },
+        { "name": "Company", "type": "text" },
+        { "name": "Bill Id", "type": "text" },
+        { "name": "Synced At", "type": "text" }
+      ]
+    },
+    {
+      "key": "sync_logs",
+      "name": "Sync Logs",
+      "view": "table",
+      "askOnSave": false,
+      "desc": "One line per sync run: when it ran, what it added and updated, and any error.",
+      "views": [
+        { "name": "With errors", "match": "any", "where": [ { "field": "Status", "op": "is", "value": "Partial" }, { "field": "Status", "op": "is", "value": "Failed" } ] }
+      ],
+      "fields": [
+        { "name": "Run At", "type": "text" },
+        { "name": "Status", "type": "dropdown", "options": ["Success", "Partial", "Failed"] },
+        { "name": "Company", "type": "text" },
+        { "name": "Sync Type", "type": "text" },
+        { "name": "Records Created", "type": "number" },
+        { "name": "Records Updated", "type": "number" },
+        { "name": "Records Failed", "type": "number" },
+        { "name": "Error Message", "type": "para" }
+      ]
+    }
+  ],
+  "nav": [
+    {
+      "grp": "Overview",
+      "items": [
+        { "id": "home", "label": "Dashboard", "icon": "LayoutDashboard", "type": "home" },
+        { "id": "inbox", "label": "Inbox", "icon": "Bell", "type": "inbox" }
+      ]
+    },
+    {
+      "grp": "Transactions",
+      "items": [
+        { "id": "vouchers", "label": "Vouchers", "icon": "Receipt", "type": "records", "form": "vouchers", "view": "table" },
+        { "id": "voucher-entries", "label": "Voucher Entries", "icon": "ListOrdered", "type": "records", "form": "voucher_entries", "view": "table" },
+        { "id": "voucher-items", "label": "Voucher Items", "icon": "Package", "type": "records", "form": "voucher_items", "view": "table" },
+        { "id": "outstanding", "label": "Outstanding", "icon": "Clock", "type": "records", "form": "outstanding", "view": "table" }
+      ]
+    },
+    {
+      "grp": "Masters",
+      "items": [
+        { "id": "companies", "label": "Companies", "icon": "Building2", "type": "records", "form": "companies", "view": "cards" },
+        { "id": "ledgers", "label": "Ledgers", "icon": "BookOpen", "type": "records", "form": "ledgers", "view": "table" },
+        { "id": "ledger-groups", "label": "Ledger Groups", "icon": "Layers", "type": "records", "form": "ledger_groups", "view": "table" }
+      ]
+    },
+    {
+      "grp": "Tools",
+      "items": [
+        { "id": "calendar", "label": "Calendar", "icon": "Calendar", "type": "native", "route": "calendar" },
+        { "id": "sync-logs", "label": "Sync Logs", "icon": "History", "type": "records", "form": "sync_logs", "view": "table" },
+        { "id": "ajen", "label": "AJEN", "icon": "Sparkles", "type": "native", "route": "ajen" }
+      ]
+    }
+  ],
+  "dashboard": {
+    "tagline": "Sales, purchases, receipts and payments from Tally, leaving out cancelled vouchers.",
+    "dates": { "vouchers": "Voucher Date" },
+    "metrics": [
+      { "form": "vouchers", "kind": "sum", "field": "Amount", "label": "Sales", "money": true,
+        "is": { "field": "Voucher Type", "value": "Sales" }, "not": { "field": "Is Cancelled", "values": ["Yes"] } },
+      { "form": "vouchers", "kind": "sum", "field": "Amount", "label": "Purchases", "money": true,
+        "is": { "field": "Voucher Type", "value": "Purchase" }, "not": { "field": "Is Cancelled", "values": ["Yes"] } },
+      { "form": "vouchers", "kind": "sum", "field": "Amount", "label": "Receipts", "money": true,
+        "is": { "field": "Voucher Type", "value": "Receipt" }, "not": { "field": "Is Cancelled", "values": ["Yes"] } },
+      { "form": "vouchers", "kind": "sum", "field": "Amount", "label": "Payments", "money": true,
+        "is": { "field": "Voucher Type", "value": "Payment" }, "not": { "field": "Is Cancelled", "values": ["Yes"] } }
+    ],
+    "charts": [
+      { "form": "vouchers", "group": "Voucher Type", "title": "Vouchers by type", "total": "Amount",
+        "is": { "field": "Is Cancelled", "value": "No" } },
+      { "form": "ledgers", "group": "Group", "title": "Ledgers by group" }
+    ],
+    "list": { "form": "vouchers", "label": "Latest vouchers", "title": "Party Ledger Name", "sub": "Voucher Type", "date": "Voucher Date" }
+  },
+  "flows": []
+}

@@ -1,11 +1,15 @@
 /**
- * Tally Connector - Core Sync Engine v2.0 (AJEMS JSON Builder API)
+ * Tally Connector - Core Sync Engine v2.2 (AJEMS JSON Builder API)
  *
- * Key features:
- *  - Per-account configuration: API base URL + 8 form IDs editable in Settings
- *  - Label-based field auto-discovery: field keys are fetched from each form's
- *    GET response (labels map), so the app works with ANY AJEMS account as long
- *    as the form field labels follow the standard naming.
+ * How it works:
+ *  - The "Tally Connector" app is installed in the workspace from the AJEMS App
+ *    Store. Connect finds that installed app and links its modules; it never
+ *    creates an app or a form.
+ *  - Field keys, field types and choice options are read from each form on every
+ *    sync, so values are sent the way each field stores them (a number as a
+ *    number, a Yes/No or dropdown choice as its option id).
+ *  - A workspace that still has the app the old connector created keeps working:
+ *    the same fields are found under their old names.
  *  - GET-based deduplication/upsert, multi-company sync, incremental fallback.
  */
 
@@ -15,143 +19,166 @@ const path = require("path");
 const { app, safeStorage } = require("electron");
 const { XMLParser } = require("fast-xml-parser");
 
-/* ============ ENTITY FIELD DEFINITIONS (label → value) ============ */
-/* Labels must match the field labels in the AJEMS forms exactly.     */
+/* ============ ENTITY FIELD DEFINITIONS (field name → value) ============ */
+/* Names are the field names of the App Store app. A name the form does not have
+   is skipped, so the legacy-only names at the end of each list cost nothing.
+   A value of `undefined` is never sent (it leaves the stored value alone). */
 const ENTITY_FIELDS = {
   companies: {
     guidLabel: "Company Guid",
     alterLabel: "Last Alter Id",
+    nameLabel: "Company Name",
     fields: (r) => ({
-      "Id": r.tally_guid,
-      "Client Id": "",
       "Company Name": r.company_name,
-      "Company Guid": r.company_guid,
-      "Api Key": "",
-      "Last Alter Id": r.last_alter_id,
-      "Last Sync At": r.last_sync_at,
       "Status": r.status,
-      "Sync Frequency": "Manual only",
-      "Auto Sync": true,
-      "Created At": r.created_at || new Date().toISOString(),
+      "Last Sync At": r.last_sync_at,
+      "Sales": r.sales,
+      "Purchases": r.purchases,
+      "Receipts": r.receipts,
+      "Payments": r.payments,
+      "Last Alter Id": r.last_alter_id,
+      "Company Guid": r.company_guid,
+      // old app only
+      "Id": r.company_guid,
     }),
   },
   ledger_groups: {
     guidLabel: "Tally Guid",
     alterLabel: "Alter Id",
     fields: (r) => ({
-      "Id": r.tally_guid,
-      "Company Id": r.company_name,
-      "Tally Guid": r.tally_guid,
       "Name": r.name,
-      "Parent Group Id": r.parent_group_name,
+      "Parent Group": r.parent_group_name,
+      "Company": r.company_name,
       "Is Revenue": r.is_revenue,
       "Is Deemed Positive": r.is_deemed_positive,
-      "Alter Id": r.alter_id,
       "Sort Position": r.sort_position,
-      "Synced At": new Date().toISOString(),
+      "Alter Id": r.alter_id,
+      "Tally Guid": r.tally_guid,
+      "Synced At": stamp(),
+      "Id": r.tally_guid,
     }),
   },
   ledgers: {
     guidLabel: "Tally Guid",
     alterLabel: "Alter Id",
     fields: (r) => ({
-      "Id": r.tally_guid,
-      "Company Id": r.company_name,
-      "Tally Guid": r.tally_guid,
       "Name": r.name,
-      "Group Id": r.group_name,
+      "Group": r.group_name,
+      "Company": r.company_name,
       "Opening Balance": r.opening_balance,
       "Closing Balance": r.closing_balance,
       "Is Billwise": r.is_billwise,
       "Mobile": r.mobile,
       "Email": r.email,
-      "Gstin": r.gstin,
+      "GSTIN": r.gstin,
       "State": r.state,
       "Credit Limit": r.credit_limit,
       "Credit Period Days": r.credit_period_days,
       "Alter Id": r.alter_id,
-      "Synced At": new Date().toISOString(),
+      "Tally Guid": r.tally_guid,
+      "Synced At": stamp(),
+      "Id": r.tally_guid,
     }),
   },
   vouchers: {
     guidLabel: "Tally Guid",
     alterLabel: "Alter Id",
     fields: (r) => ({
-      "Id": r.tally_guid,
-      "Company Id": r.company_name,
-      "Tally Guid": r.tally_guid,
-      "Voucher Type": r.voucher_type,
       "Voucher Number": r.voucher_number,
+      "Voucher Type": r.voucher_type,
       "Voucher Date": r.voucher_date,
-      "Party Ledger Id": "",
       "Party Ledger Name": r.party_ledger_name,
       "Amount": r.amount,
       "Narration": r.narration,
       "Reference": r.reference,
       "Is Cancelled": r.is_cancelled,
+      "Company": r.company_name,
       "Alter Id": r.alter_id,
-      "Synced At": new Date().toISOString(),
+      "Tally Guid": r.tally_guid,
+      "Synced At": stamp(),
+      "Id": r.tally_guid,
     }),
   },
   voucher_entries: {
-    guidLabel: "Id",
+    guidLabel: "Line Id",
     alterLabel: null,
     fields: (r) => ({
-      "Id": r.entry_guid,
-      "Voucher Id": r.voucher_guid,
-      "Ledger Id": "",
       "Ledger Name": r.ledger_name,
       "Amount": r.amount,
       "Is Debit": r.is_debit,
+      "Voucher Number": r.voucher_number,
+      "Voucher Type": r.voucher_type,
+      "Voucher Date": r.voucher_date,
+      "Company": r.company_name,
+      "Voucher Guid": r.voucher_guid,
+      "Line Id": r.entry_guid,
     }),
   },
   voucher_items: {
-    guidLabel: "Id",
+    guidLabel: "Line Id",
     alterLabel: null,
     fields: (r) => ({
-      "Id": r.item_guid,
-      "Voucher Id": r.voucher_guid,
       "Stock Item Name": r.stock_item_name,
       "Qty": r.qty,
       "Rate": r.rate,
       "Amount": r.amount,
-      "Gst Rate": r.gst_rate,
-      "Hsn Code": r.hsn_code,
+      "GST Rate": r.gst_rate,
+      "HSN Code": r.hsn_code,
+      "Voucher Number": r.voucher_number,
+      "Voucher Type": r.voucher_type,
+      "Voucher Date": r.voucher_date,
+      "Company": r.company_name,
+      "Voucher Guid": r.voucher_guid,
+      "Line Id": r.item_guid,
     }),
   },
+  // Bill-wise outstanding is not synced yet; the definition is kept for when it is.
   outstanding: {
-    guidLabel: "Id",
+    guidLabel: "Bill Id",
     alterLabel: null,
     fields: (r) => ({
-      "Id": r.tally_guid,
-      "Company Id": r.company_name,
-      "Ledger Id": r.ledger_name,
-      "Type": r.type === "receivable",
       "Bill Ref": r.bill_ref,
+      "Ledger": r.ledger_name,
+      "Type": r.type === "receivable" ? "Receivable" : "Payable",
       "Bill Date": r.bill_date,
       "Due Date": r.due_date,
       "Pending Amount": r.pending_amount,
-      "Days Overdue": "",
-      "Synced At": new Date().toISOString(),
+      "Company": r.company_name,
+      "Bill Id": r.tally_guid,
+      "Synced At": stamp(),
     }),
   },
   sync_logs: {
     guidLabel: null,
     alterLabel: null,
     fields: (r) => ({
-      "Id": "log-" + Date.now(),
-      "Company Id": r.company_name,
-      "Entity": r.entity,
+      "Run At": stamp(),
+      "Status": r.status,
+      "Company": r.company_name,
       "Sync Type": r.sync_type,
       "Records Created": r.records_created,
       "Records Updated": r.records_updated,
-      "From Alter Id": r.from_alter_id || 0,
-      "To Alter Id": r.to_alter_id || 0,
-      "Status": r.status,
+      "Records Failed": r.records_failed,
       "Error Message": r.error_message || "",
-      "Created At": new Date().toISOString(),
+      // old app only
+      "Id": "log-" + Date.now(),
+      "Entity": "all",
+      "From Alter Id": 0,
+      "To Alter Id": 0,
     }),
   },
+};
+
+/* The same fields under the names the old connector-made app gave them. */
+const OLD_LABELS = {
+  companies: {},
+  ledger_groups: { "Company": "Company Id", "Parent Group": "Parent Group Id" },
+  ledgers: { "Company": "Company Id", "Group": "Group Id", "GSTIN": "Gstin" },
+  vouchers: { "Company": "Company Id" },
+  voucher_entries: { "Voucher Guid": "Voucher Id", "Line Id": "Id" },
+  voucher_items: { "Voucher Guid": "Voucher Id", "Line Id": "Id", "GST Rate": "Gst Rate", "HSN Code": "Hsn Code" },
+  outstanding: { "Company": "Company Id", "Ledger": "Ledger Id", "Bill Id": "Id" },
+  sync_logs: { "Company": "Company Id", "Run At": "Created At" },
 };
 
 /* ============ CONFIG / STATE ============ */
@@ -162,6 +189,9 @@ const DEFAULT_CONFIG = {
   tenantUrl: "",
   apiBase: "",
   secretKey: "",
+  // The installed app Connect linked to (shown in the log; not needed to sync)
+  appId: "",
+  appTitle: "",
   // Per-form Responses API URLs - auto-filled by Connect, editable in Settings
   formUrls: {
     companies: "", ledger_groups: "", ledgers: "", vouchers: "",
@@ -180,6 +210,8 @@ const DEFAULT_CONFIG = {
   postDelayMs: 120,
 };
 
+/* Module (form) titles. The App Store app names them without "Tally"; the old
+   connector-made app named them with it. matchForm accepts both. */
 const ENTITY_TITLES = {
   companies: "Tally Companies",
   ledger_groups: "Tally Ledger Groups",
@@ -190,6 +222,9 @@ const ENTITY_TITLES = {
   outstanding: "Tally Outstanding",
   sync_logs: "Tally Sync Logs",
 };
+/* Modules the connector can work without (nothing is written to them yet). */
+const OPTIONAL_ENTITIES = ["outstanding"];
+const moduleName = (entity) => ENTITY_TITLES[entity].replace(/^Tally /, "");
 
 function ajemsHeaders(cfg) {
   const h = { "Content-Type": "application/json" };
@@ -204,11 +239,9 @@ function dataDir() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
-/* Credentials live in memory for the session unless the user ticks
-   "Remember on this computer". The app therefore starts blank by default. */
 /* Configuration is stored at %APPDATA%/tally-connector/config.json.
    A fresh install starts empty; "Disconnect" clears the saved credentials. */
-const CREDENTIAL_KEYS = ["tenantUrl", "apiBase", "secretKey", "formUrls"];
+const CREDENTIAL_KEYS = ["tenantUrl", "apiBase", "secretKey", "formUrls", "appId", "appTitle"];
 
 let cfgCache = null, cfgCacheMtime = 0;
 
@@ -285,8 +318,6 @@ function disconnect() {
   return true;
 }
 
-
-
 /* ============ HELPERS ============ */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -307,183 +338,172 @@ const yn = (v) => String(v ?? "").trim().toLowerCase() === "yes";
 const txt = (v) => (v === undefined || v === null ? "" : String(v).trim());
 const tdate = (v) => { const s = txt(v); return s.length === 8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : ""; };
 const arr = (v) => (!v ? [] : Array.isArray(v) ? v : [v]);
+const pad2 = (n) => String(n).padStart(2, "0");
+/** "2026-11-05 16:20" in this computer's time - readable, and it sorts in date order */
+function stamp(d = new Date()) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+/** A value placed inside Tally's request XML ("A & B Traders" must become "A &amp; B Traders") */
+const xmlEsc = (v) => String(v ?? "")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 /** Vouchers are fetched from the start of the current Indian financial year (1 April) */
 const fyStart = () => {
   const d = new Date();
   const y = d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1;
   return `${y}0401`;
 };
-const today = () => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`; };
+const today = () => { const d = new Date(); return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`; };
 const formUrl = (cfg, entity) => {
   let u = ((cfg.formUrls && cfg.formUrls[entity]) || "").trim();
   if (u && !u.endsWith("/")) u += "/";
   return u;
 };
+/** The form's own URL (its definition), from its Responses URL */
+const formDetailUrl = (cfg, entity) => formUrl(cfg, entity).replace(/responses\/$/, "");
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const httpWhy = (err) => (err && err.response ? "HTTP " + err.response.status : (err && err.message) || "network error");
 
-/* ============ GLOBAL FIELD IDS (AJEMS universal Tally workflow - constant across accounts) ============ */
-const GLOBAL_FIELD_KEYS = {
-  companies: {
-    "Id": "text_20260717090211_00001",
-    "Client Id": "text_20260717090211_00002",
-    "Company Name": "text_20260717090211_00003",
-    "Company Guid": "text_20260717090211_00004",
-    "Api Key": "text_20260717090211_00005",
-    "Last Alter Id": "number_20260717090211_00006",
-    "Last Sync At": "text_20260717090211_00007",
-    "Status": "text_20260717090211_00008",
-    "Sync Frequency": "dropdown_20260717090211_00009",
-    "Auto Sync": "checkbox_20260717090211_00010",
-    "Created At": "text_20260717090211_00011",
-  },
-  ledger_groups: {
-    "Id": "text_20260717090211_00012",
-    "Company Id": "text_20260717090211_00013",
-    "Tally Guid": "text_20260717090211_00014",
-    "Name": "text_20260717090211_00015",
-    "Parent Group Id": "text_20260717090211_00016",
-    "Is Revenue": "checkbox_20260717090211_00017",
-    "Is Deemed Positive": "checkbox_20260717090211_00018",
-    "Alter Id": "number_20260717090211_00019",
-    "Sort Position": "number_20260717090211_00020",
-    "Synced At": "text_20260717090211_00021",
-  },
-  ledgers: {
-    "Id": "text_20260717090211_00022",
-    "Company Id": "text_20260717090211_00023",
-    "Tally Guid": "text_20260717090211_00024",
-    "Name": "text_20260717090211_00025",
-    "Group Id": "text_20260717090211_00026",
-    "Opening Balance": "number_20260717090211_00027",
-    "Closing Balance": "number_20260717090211_00028",
-    "Is Billwise": "checkbox_20260717090211_00029",
-    "Mobile": "text_20260717090211_00030",
-    "Email": "text_20260717090211_00031",
-    "Gstin": "text_20260717090211_00032",
-    "State": "text_20260717090211_00033",
-    "Credit Limit": "number_20260717090211_00034",
-    "Credit Period Days": "number_20260717090211_00035",
-    "Alter Id": "number_20260717090211_00036",
-    "Synced At": "text_20260717090211_00037",
-  },
-  vouchers: {
-    "Id": "text_20260717090211_00038",
-    "Company Id": "text_20260717090211_00039",
-    "Tally Guid": "text_20260717090211_00040",
-    "Voucher Type": "text_20260717090211_00041",
-    "Voucher Number": "text_20260717090211_00042",
-    "Voucher Date": "text_20260717090211_00043",
-    "Party Ledger Id": "text_20260717090211_00044",
-    "Party Ledger Name": "text_20260717090211_00045",
-    "Amount": "number_20260717090211_00046",
-    "Narration": "text_20260717090211_00047",
-    "Reference": "text_20260717090211_00048",
-    "Is Cancelled": "checkbox_20260717090211_00049",
-    "Alter Id": "number_20260717090211_00050",
-    "Synced At": "text_20260717090211_00051",
-  },
-  voucher_entries: {
-    "Id": "text_20260717090211_00052",
-    "Voucher Id": "text_20260717090211_00053",
-    "Ledger Id": "text_20260717090211_00054",
-    "Ledger Name": "text_20260717090211_00055",
-    "Amount": "number_20260717090211_00056",
-    "Is Debit": "checkbox_20260717090211_00057",
-  },
-  voucher_items: {
-    "Id": "text_20260717090211_00058",
-    "Voucher Id": "text_20260717090211_00059",
-    "Stock Item Name": "text_20260717090211_00060",
-    "Qty": "number_20260717090211_00061",
-    "Rate": "number_20260717090211_00062",
-    "Amount": "number_20260717090211_00063",
-    "Gst Rate": "number_20260717090211_00064",
-    "Hsn Code": "text_20260717090211_00065",
-  },
-  outstanding: {
-    "Id": "text_20260717090211_00066",
-    "Company Id": "text_20260717090211_00067",
-    "Ledger Id": "text_20260717090211_00068",
-    "Type": "checkbox_20260717090211_00069",
-    "Bill Ref": "text_20260717090211_00070",
-    "Bill Date": "date_20260717090211_00071",
-    "Due Date": "date_20260717090211_00072",
-    "Pending Amount": "number_20260717090211_00073",
-    "Days Overdue": "text_20260717090211_00074",
-    "Synced At": "text_20260717090211_00075",
-  },
-  sync_logs: {
-    "Id": "text_20260717090211_00076",
-    "Company Id": "text_20260717090211_00077",
-    "Entity": "text_20260717090211_00078",
-    "Sync Type": "text_20260717090211_00079",
-    "Records Created": "number_20260717090211_00080",
-    "Records Updated": "number_20260717090211_00081",
-    "From Alter Id": "number_20260717090211_00082",
-    "To Alter Id": "number_20260717090211_00083",
-    "Status": "text_20260717090211_00084",
-    "Error Message": "text_20260717090211_00085",
-    "Created At": "text_20260717090211_00086",
-  },
-};
+/* ============ FIELD DISCOVERY ============ */
+/* fieldMaps[entity] = { "<normalised field name>": { key, type, options: [{id, label, color}] } } */
+const fieldMaps = {};
 
-/* ============ FIELD KEY AUTO-DISCOVERY ============ */
-/* labelMaps[entity] = { "Name": "text_xxx_00025", ... }  (label → field key) */
-const labelMaps = {};
+/* Field types whose value AJEMS works out itself - never sent. */
+const DERIVED_TYPES = new Set([
+  "autofield", "slug field", "form expression", "compute plus", "comput", "advanced compute",
+  "grid col sum", "advanced grid col sum", "form col stat", "grid", "file upload",
+]);
 
+/* When a form's definition cannot be read, its key still tells the type:
+   the builder writes keys as <type>_<time>_<n>, e.g. radio_v2_1762300000000_103. */
+function typeFromKey(key) {
+  const m = String(key || "").match(/^([a-z0-9_]+?)_\d{6,}_\d+$/i);
+  return m ? m[1].replace(/_/g, " ").toLowerCase() : "text";
+}
+
+function optionsOf(field) {
+  const items = arr(field.option_items || field.optionItems)
+    .filter((o) => o && typeof o === "object" && txt(o.id))
+    .map((o) => ({ id: txt(o.id), label: txt(o.label || o.id), color: txt(o.optionColor || o.color) }));
+  if (items.length) return items;
+  return arr(field.options).map((o) => ({ id: txt(o), label: txt(o), color: "" })).filter((o) => o.id);
+}
+
+function fieldMapFromDefinition(fields) {
+  const map = {};
+  for (const f of arr(fields)) {
+    if (!f || !f.key || !f.label || f.isVisible === false) continue;
+    const name = norm(f.label);
+    if (map[name]) continue;                       // two fields with one name: the first is used
+    map[name] = { key: txt(f.key), type: txt(f.field_type).toLowerCase() || typeFromKey(f.key), options: optionsOf(f) };
+  }
+  return map;
+}
+
+function fieldMapFromLabels(labels) {
+  const map = {};
+  for (const [key, label] of Object.entries(labels || {})) {
+    const name = norm(label);
+    if (!name || map[name]) continue;
+    map[name] = { key, type: typeFromKey(key), options: [] };
+  }
+  return map;
+}
+
+/** Read every linked form's fields: key, type and options. Returns the entities that could not be read. */
 async function discoverFields(cfg, log) {
-  log("Resolving form fields...");
-  const entities = Object.keys(ENTITY_FIELDS);
+  log("Reading the app's fields...");
+  const entities = Object.keys(ENTITY_FIELDS).filter((e) => formUrl(cfg, e));
 
   // Clear any maps left over from a previously connected workspace
-  for (const e of entities) delete labelMaps[e];
+  for (const e of Object.keys(fieldMaps)) delete fieldMaps[e];
 
-  const results = await Promise.all(entities.map(async (entity) => {
+  const failed = [];
+  await Promise.all(entities.map(async (entity) => {
     try {
-      const res = await axios.get(formUrl(cfg, entity), { headers: ajemsHeaders(cfg), timeout: 30000 });
-      // Start from the global workflow keys so a partial or empty reply still works,
-      // then let anything the account actually reports win.
-      const map = { ...GLOBAL_FIELD_KEYS[entity] };
-      for (const [key, label] of Object.entries(res.data?.labels || {})) map[txt(label)] = key;
-      labelMaps[entity] = map;
-      return true;
+      const res = await axios.get(formDetailUrl(cfg, entity), { headers: ajemsHeaders(cfg), timeout: 30000 });
+      const map = fieldMapFromDefinition(res.data && res.data.fields);
+      if (!Object.keys(map).length) throw new Error("no fields returned");
+      fieldMaps[entity] = map;
     } catch (err) {
-      labelMaps[entity] = { ...GLOBAL_FIELD_KEYS[entity] };
-      detailLog(`   ${entity}: live discovery unavailable (${err.response ? "HTTP " + err.response.status : err.message}) - using global workflow field IDs.`);
-      return false;
+      // Fall back to the field names the Responses URL reports. Types then come from the keys;
+      // a choice field has no option list this way, so its value is left out.
+      try {
+        const res = await axios.get(formUrl(cfg, entity), { headers: ajemsHeaders(cfg), timeout: 60000 });
+        const map = fieldMapFromLabels(res.data && res.data.labels);
+        if (!Object.keys(map).length) throw new Error("no field names returned");
+        fieldMaps[entity] = map;
+        log(`   ${moduleName(entity)}: field details unavailable (${httpWhy(err)}) - using field names only; Yes/No and dropdown values are left out.`);
+      } catch (err2) {
+        failed.push(entity);
+        log(`   ❌ ${moduleName(entity)}: could not read its fields (${httpWhy(err2)}).`);
+      }
     }
   }));
 
-  const okCount = results.filter(Boolean).length;
-  log(`   ${okCount}/${entities.length} forms discovered`);
-  return okCount;
+  log(`   ${entities.length - failed.length}/${entities.length} modules read`);
+  return failed;
 }
 
-function buildPayload(entity, record) {
-  const def = ENTITY_FIELDS[entity];
-  const map = labelMaps[entity];
-  if (!map) return null;
-  const logical = def.fields(record);
-  const payload = {};
-  for (const [label, value] of Object.entries(logical)) {
-    const key = map[label];
-    if (!key) continue;
-    // Strict type coercion - matches AJEMS sample payload exactly:
-    // number_* → 42 (Number), checkbox_* → true (Boolean),
-    // date_* → "YYYY-MM-DD" (String), text_*/dropdown_* → "Sample text" (String)
-    if (key.startsWith("number_")) {
-      const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(/,/g, ""));
-      payload[key] = isNaN(n) ? 0 : n;
-    } else if (key.startsWith("checkbox_")) {
-      payload[key] = value === true || value === "true" || value === "Yes" || value === "yes" || value === 1;
-    } else {
-      payload[key] = value === undefined || value === null ? "" : String(value);
-    }
-  }
-  return payload;
+/** The form field behind one of our field names - under its new name, or its old one. */
+function fieldFor(entity, label) {
+  const map = fieldMaps[entity];
+  if (!map || !label) return null;
+  const old = (OLD_LABELS[entity] || {})[label];
+  return map[norm(label)] || (old ? map[norm(old)] : null) || null;
 }
 
 function keyForLabel(entity, label) {
-  return label && labelMaps[entity] ? labelMaps[entity][label] : null;
+  const f = fieldFor(entity, label);
+  return f ? f.key : null;
+}
+
+const isBlank = (v) => v === undefined || v === null || v === "";
+const truthy = (v) => v === true || v === 1 || ["true", "yes", "receivable"].includes(String(v).trim().toLowerCase());
+
+/** Turn a record into the body AJEMS stores: each value in the shape its field type keeps. */
+function buildPayload(entity, record) {
+  const def = ENTITY_FIELDS[entity];
+  if (!fieldMaps[entity]) return null;
+  const payload = {};
+  for (const [label, value] of Object.entries(def.fields(record))) {
+    if (value === undefined) continue;
+    const f = fieldFor(entity, label);
+    if (!f || payload[f.key] !== undefined) continue;
+    const type = f.type;
+
+    if (DERIVED_TYPES.has(type)) continue;
+
+    if (type === "number" || type === "rating") {
+      const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(/,/g, ""));
+      payload[f.key] = isNaN(n) ? 0 : n;
+    } else if (type === "radio v2" || type === "dropdown v2") {
+      // One choice: stored as the option's id, with its label alongside (as a record saved in AJEMS has)
+      const want = typeof value === "boolean" ? (value ? "yes" : "no") : String(value ?? "").trim().toLowerCase();
+      const opt = f.options.find((o) => o.label.toLowerCase() === want) || f.options.find((o) => o.id.toLowerCase() === want);
+      if (!opt) continue;
+      payload[f.key] = opt.id;
+      payload[f.key + "_meta"] = { id: opt.id, label: opt.label, optionColor: opt.color };
+    } else if (type === "checkbox v2") {
+      const want = typeof value === "boolean" ? (value ? "yes" : "no") : String(value ?? "").trim().toLowerCase();
+      const opt = f.options.find((o) => o.label.toLowerCase() === want);
+      if (!opt) continue;
+      payload[f.key] = [opt.id];
+      payload[f.key + "_meta_list"] = [{ id: opt.id, label: opt.label, optionColor: opt.color }];
+    } else if (type === "checkbox") {
+      // The old connector-made app: a single tick box, stored as true / false
+      payload[f.key] = truthy(value);
+    } else if (type === "dropdown" || type === "radio") {
+      const want = typeof value === "boolean" ? (value ? "Yes" : "No") : String(value ?? "");
+      const opt = f.options.find((o) => o.label.toLowerCase() === want.toLowerCase());
+      payload[f.key] = opt ? opt.label : want;
+    } else if (type === "date") {
+      if (isBlank(value)) continue;
+      payload[f.key] = String(value).slice(0, 10);
+    } else {
+      payload[f.key] = typeof value === "boolean" ? (value ? "Yes" : "No") : isBlank(value) ? "" : String(value);
+    }
+  }
+  return payload;
 }
 
 /* ============ TALLY ============ */
@@ -499,22 +519,25 @@ async function tallyRequest(cfg, xmlBody) {
   return parsed;
 }
 
+const companyVar = (cfg, withCompany, company) =>
+  withCompany ? `<SVCURRENTCOMPANY>${xmlEsc(company || cfg.companyName)}</SVCURRENTCOMPANY>` : "";
+
 const mastersXML = (cfg, withCompany, company) => `<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
 <BODY><EXPORTDATA><REQUESTDESC><REPORTNAME>List of Accounts</REPORTNAME>
-<STATICVARIABLES>${withCompany ? `<SVCURRENTCOMPANY>${company || cfg.companyName}</SVCURRENTCOMPANY>` : ""}
+<STATICVARIABLES>${companyVar(cfg, withCompany, company)}
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>`;
 
 const daybookXML = (cfg, withCompany, company) => `<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
 <BODY><EXPORTDATA><REQUESTDESC><REPORTNAME>Day Book</REPORTNAME>
-<STATICVARIABLES>${withCompany ? `<SVCURRENTCOMPANY>${company || cfg.companyName}</SVCURRENTCOMPANY>` : ""}
+<STATICVARIABLES>${companyVar(cfg, withCompany, company)}
 <SVFROMDATE>${fyStart()}</SVFROMDATE><SVTODATE>${today()}</SVTODATE>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>`;
 
 const voucherRegisterXML = (cfg, withCompany, company) => `<ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
 <BODY><EXPORTDATA><REQUESTDESC><REPORTNAME>Voucher Register</REPORTNAME>
-<STATICVARIABLES>${withCompany ? `<SVCURRENTCOMPANY>${company || cfg.companyName}</SVCURRENTCOMPANY>` : ""}
+<STATICVARIABLES>${companyVar(cfg, withCompany, company)}
 <SVFROMDATE>${fyStart()}</SVFROMDATE><SVTODATE>${today()}</SVTODATE>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>
 </REQUESTDESC></EXPORTDATA></BODY></ENVELOPE>`;
@@ -606,7 +629,7 @@ async function ajemsUpdate(cfg, entity, responseId, record, log) {
     return true;
   } catch (err) {
     bump(entity, "failed");
-    log(`   ❌ ${entity} UPDATE failed: ${err.response ? "HTTP " + err.response.status : err.message}`);
+    log(`   ❌ ${entity} UPDATE failed: ${httpWhy(err)}`);
     return false;
   } finally { await sleep(cfg.postDelayMs); }
 }
@@ -616,32 +639,35 @@ async function fetchExistingMap(cfg, entity, log) {
   const guidKey = keyForLabel(entity, def.guidLabel);
   if (!guidKey) return null;
   const alterKey = keyForLabel(entity, def.alterLabel);
+  const nameKey = keyForLabel(entity, def.nameLabel);
   try {
-    const res = await axios.get(formUrl(cfg, entity), { headers: ajemsHeaders(cfg), timeout: 60000 });
+    const res = await axios.get(formUrl(cfg, entity), { headers: ajemsHeaders(cfg), timeout: 120000 });
     const responses = arr(res.data?.responses);
     const map = {};
     for (const resp of responses) {
       const rdata = resp.response || {};
       const guid = txt(rdata[guidKey]);
       if (!guid) continue;
-      map[guid] = { id: txt(resp._id), alter_id: alterKey ? num(rdata[alterKey]) : -1 };
+      map[guid] = { id: txt(resp._id), alter_id: alterKey ? num(rdata[alterKey]) : -1, name: nameKey ? txt(rdata[nameKey]) : "" };
     }
     log(`   ${entity}: ${Object.keys(map).length} existing records in AJEMS`);
     return map;
   } catch (err) {
-    log(`   ${entity} GET failed (${err.response ? "HTTP " + err.response.status : err.message}) - falling back to local incremental mode`);
+    log(`   ${entity} GET failed (${httpWhy(err)}) - falling back to local incremental mode`);
     return null;
   }
 }
 
-async function upsert(cfg, entity, record, existingMap, log) {
+/** Add the record, or update the one AJEMS already has. `force` updates it even when
+ *  Tally's alter id is unchanged (a company's totals and last-sync time, a changed voucher's lines). */
+async function upsert(cfg, entity, record, existingMap, log, force = false) {
   const def = ENTITY_FIELDS[entity];
   if (existingMap && def.guidLabel) {
     const guid = txt(record.tally_guid || record.entry_guid || record.item_guid || record.company_guid);
     const existing = existingMap[guid];
     if (!existing) return await ajemsPost(cfg, entity, record, log);
     const newAlter = record.alter_id !== undefined ? num(record.alter_id) : -1;
-    if (existing.alter_id === newAlter || !def.alterLabel) { bump(entity, "skipped"); return true; }
+    if (!force && (existing.alter_id === newAlter || !def.alterLabel)) { bump(entity, "skipped"); return true; }
     if (canUpdate(cfg)) return await ajemsUpdate(cfg, entity, existing.id, record, log);
     detailLog(`   ${entity} "${record.name || guid}" has changed but update API is not configured - skipped (avoiding duplicate)`);
     bump(entity, "skipped");
@@ -651,17 +677,17 @@ async function upsert(cfg, entity, record, existingMap, log) {
 }
 
 /* ============ SYNC: MASTERS ============ */
+/** Groups and ledgers. Returns what the company's own record needs (it is written after the vouchers). */
 async function syncMasters(cfg, state, log, company) {
   log(`\n[${company}] Fetching masters from Tally...`);
   const messages = await tallyFetchWithRetry(cfg, mastersXML, "Masters", log, company);
   log(`   ${messages.length} records received`);
-  if (messages.length === 0) return 0;
+  if (messages.length === 0) return null;
 
-  // These three lookups are independent - fetch them together
-  const [groupMap, ledgerMap, compMap] = await Promise.all([
+  // These lookups are independent - fetch them together
+  const [groupMap, ledgerMap] = await Promise.all([
     fetchExistingMap(cfg, "ledger_groups", log),
     fetchExistingMap(cfg, "ledgers", log),
-    fetchExistingMap(cfg, "companies", log),
   ]);
 
   if (!state.masters_alter) state.masters_alter = {};
@@ -725,23 +751,17 @@ async function syncMasters(cfg, state, log, company) {
     detailLog(`   → ledger: ${rec.name}`);
     await upsert(cfg, "ledgers", rec, ledgerMap, log);
   });
-  const processed = groups.length + ledgers.length;
-
-  await upsert(cfg, "companies", {
-    tally_guid: companyGuidPrefix || company,
-    company_name: company,
-    company_guid: companyGuidPrefix || company,
-    last_alter_id: maxAlterId,
-    last_sync_at: new Date().toISOString(),
-    status: "connected",
-    alter_id: maxAlterId,
-  }, compMap, log);
 
   state.masters_alter[company] = maxAlterId;
-  return processed;
+  return { guid: companyGuidPrefix || company, maxAlterId };
 }
 
 /* ============ SYNC: VOUCHERS ============ */
+/* A company's totals count Tally's four standard voucher types, cancelled vouchers left out. */
+const TOTAL_OF_TYPE = { sales: "sales", purchase: "purchases", receipt: "receipts", payment: "payments" };
+
+/** Vouchers and their lines. Returns the company's totals over every voucher Tally sent
+ *  (the current financial year), or null when Tally sent none. */
 async function syncVouchers(cfg, state, log, company) {
   log(`\n[${company}] Fetching vouchers (${fyStart()} to ${today()})...`);
   let messages = await tallyFetchWithRetry(cfg, daybookXML, "DayBook", log, company);
@@ -752,16 +772,28 @@ async function syncVouchers(cfg, state, log, company) {
     vouchers = messages.filter((m) => m.VOUCHER).map((m) => m.VOUCHER);
   }
   log(`   ${vouchers.length} vouchers received`);
-  if (vouchers.length === 0) return 0;
+  if (vouchers.length === 0) return null;
 
   const vchMap = await fetchExistingMap(cfg, "vouchers", log);
   if (!state.synced_voucher_guids) state.synced_voucher_guids = {};
+  const totals = { sales: 0, purchases: 0, receipts: 0, payments: 0 };
 
-  let processed = 0;
+  // The lines AJEMS already holds are only needed when a voucher has changed - read them once, then
+  let lineMaps = null;
+  const loadLineMaps = async () => {
+    if (!lineMaps) {
+      const [entries, items] = await Promise.all([
+        fetchExistingMap(cfg, "voucher_entries", log),
+        fetchExistingMap(cfg, "voucher_items", log),
+      ]);
+      lineMaps = { entries, items };
+    }
+    return lineMaps;
+  };
+
   for (const v of vouchers) {
     const guid = txt(v.GUID);
     const alterId = num(v.ALTERID);
-    if (!vchMap && state.synced_voucher_guids[guid] === alterId) { bump("vouchers", "skipped"); continue; }
 
     const entries = arr(v["ALLLEDGERENTRIES.LIST"] || v["LEDGERENTRIES.LIST"]);
     const rec = {
@@ -782,36 +814,92 @@ async function syncVouchers(cfg, state, log, company) {
     }
     if (!rec.amount && entries.length) rec.amount = Math.abs(num(entries[0].AMOUNT));
 
-    detailLog(`   → voucher: ${rec.voucher_type} #${rec.voucher_number} (${rec.party_ledger_name})`);
-    const isNew = !vchMap || !vchMap[guid];
-    await upsert(cfg, "vouchers", rec, vchMap, log);
+    const bucket = TOTAL_OF_TYPE[rec.voucher_type.toLowerCase()];
+    if (bucket && !rec.is_cancelled) totals[bucket] += rec.amount;
 
-    // Lines belong to a voucher, so they are only sent when the voucher is new
-    if (isNew) {
-      await runPooled(entries, (e, i) => ajemsPost(cfg, "voucher_entries", {
+    // Without AJEMS's list we cannot tell an add from an update, so a voucher this computer
+    // has already sent is left alone rather than added twice.
+    if (!vchMap && state.synced_voucher_guids[guid] !== undefined) { bump("vouchers", "skipped"); continue; }
+
+    const existing = vchMap ? vchMap[guid] : null;
+    const isNew = !existing;
+    const changed = !!existing && existing.alter_id !== alterId;
+    if (isNew || changed) detailLog(`   → voucher: ${rec.voucher_type} #${rec.voucher_number} (${rec.party_ledger_name})`);
+    const ok = await upsert(cfg, "vouchers", rec, vchMap, log);
+
+    // Lines follow their voucher: added with a new voucher, brought up to date with a changed one
+    if (ok && (isNew || changed)) {
+      const maps = changed ? await loadLineMaps() : { entries: null, items: null };
+      const head = {
+        voucher_guid: guid, voucher_number: rec.voucher_number, voucher_type: rec.voucher_type,
+        voucher_date: rec.voucher_date, company_name: company,
+      };
+      const sendLine = (entity, line, map) => {
+        if (!changed) return ajemsPost(cfg, entity, line, log);
+        // changed voucher, but AJEMS's lines could not be read: leave them rather than add them twice
+        if (!map) { bump(entity, "skipped"); return true; }
+        return upsert(cfg, entity, line, map, log, true);
+      };
+
+      await runPooled(entries, (e, i) => sendLine("voucher_entries", {
+        ...head,
         entry_guid: `${guid}-e${i}`,
-        voucher_guid: guid,
         ledger_name: txt(e.LEDGERNAME),
         amount: num(e.AMOUNT),
         is_debit: yn(e.ISDEEMEDPOSITIVE),
-      }, log));
+      }, maps.entries));
 
       const items = arr(v["ALLINVENTORYENTRIES.LIST"] || v["INVENTORYENTRIES.LIST"]);
-      await runPooled(items, (it, i) => ajemsPost(cfg, "voucher_items", {
+      await runPooled(items, (it, i) => sendLine("voucher_items", {
+        ...head,
         item_guid: `${guid}-i${i}`,
-        voucher_guid: guid,
         stock_item_name: txt(it.STOCKITEMNAME),
         qty: num(it.ACTUALQTY),
         rate: num(it.RATE),
         amount: num(it.AMOUNT),
         gst_rate: num(it.GSTRATE),
         hsn_code: txt(it.GSTHSNCODE),
-      }, log));
+      }, maps.items));
     }
-    state.synced_voucher_guids[guid] = alterId;
-    processed++;
+    if (ok) state.synced_voucher_guids[guid] = alterId;
   }
-  return processed;
+  return totals;
+}
+
+/* ============ SYNC: COMPANY ============ */
+/** The company's own record: written last, so its totals and last-sync time are those of this run. */
+async function syncCompany(cfg, log, company, masters, totals, compMap) {
+  const guid = masters ? masters.guid : company;
+  const rec = {
+    company_name: company,
+    company_guid: guid,
+    last_alter_id: masters ? masters.maxAlterId : undefined,
+    alter_id: masters ? masters.maxAlterId : undefined,
+    last_sync_at: stamp(),
+    status: "Connected",
+    // undefined = not sent: when Tally gave no vouchers this run, the stored totals stay
+    sales: totals ? totals.sales : undefined,
+    purchases: totals ? totals.purchases : undefined,
+    receipts: totals ? totals.receipts : undefined,
+    payments: totals ? totals.payments : undefined,
+  };
+  if (!compMap) {
+    // AJEMS's company list could not be read: do not risk a second record for the same company
+    bump("companies", "skipped");
+    return;
+  }
+  // The record is found by its GUID, or failing that by the company's name (a run in which
+  // Tally sent no masters has no GUID to go by) - one company never gets two records.
+  let map = compMap;
+  if (!compMap[guid]) {
+    const byName = Object.entries(compMap).find(([, row]) => row.name === company);
+    if (byName) {
+      if (!masters) rec.company_guid = byName[0];          // keep the GUID it was stored with
+      map = { ...compMap, [rec.company_guid]: byName[1] };
+    }
+  }
+  await upsert(cfg, "companies", rec, map, log, true);
+  if (!compMap[rec.company_guid]) compMap[rec.company_guid] = { id: "", alter_id: -1, name: company };
 }
 
 /* ============ MAIN RUN ============ */
@@ -828,8 +916,13 @@ async function runSync(log) {
     return stats;
   }
 
-  // Step 1: discover field keys for THIS AJEMS account
-  await discoverFields(cfg, log);
+  // Step 1: read the fields of the app in THIS workspace
+  const unread = (await discoverFields(cfg, log)).filter((e) => !OPTIONAL_ENTITIES.includes(e));
+  if (unread.length) {
+    log(`❌ Sync stopped: could not read ${unread.map(moduleName).join(", ")} in AJEMS.`);
+    log("   Check that the Tally Connector app is still installed and that this secret key can open it, then click AJEMS Connect again.");
+    throw new Error(`Could not read ${unread.map(moduleName).join(", ")} in AJEMS`);
+  }
   log(`Upsert: deduplication ON${canUpdate(cfg) ? " + record updates ENABLED" : " (updates disabled - changed records will be skipped)"}`);
 
   const companies = await getOpenCompanies(cfg, log);
@@ -838,13 +931,21 @@ async function runSync(log) {
     return stats;
   }
 
+  const compMap = await fetchExistingMap(cfg, "companies", log);
+
   let errMsg = "";
   for (const company of companies) {
-    try { await syncMasters(cfg, state, log, company); }
+    let masters = null, totals = null;
+    try { masters = await syncMasters(cfg, state, log, company); }
     catch (e) { errMsg += ` Masters[${company}]: ` + e.message; log("❌ " + e.message); }
 
-    try { await syncVouchers(cfg, state, log, company); }
+    try { totals = await syncVouchers(cfg, state, log, company); }
     catch (e) { errMsg += ` Vouchers[${company}]: ` + e.message; log("❌ Vouchers: " + e.message); }
+
+    if (masters || totals) {
+      try { await syncCompany(cfg, log, company, masters, totals, compMap); }
+      catch (e) { errMsg += ` Company[${company}]: ` + e.message; log("❌ Company: " + e.message); }
+    }
   }
 
   saveState(cfg, state);
@@ -852,17 +953,16 @@ async function runSync(log) {
   const totalCreated = Object.values(stats).reduce((a, s) => a + s.created, 0);
   const totalUpdated = Object.values(stats).reduce((a, s) => a + s.updated, 0);
   const totalFailed = Object.values(stats).reduce((a, s) => a + s.failed, 0);
+  const nothingDone = totalCreated + totalUpdated === 0 && Object.values(stats).every((s) => !s.skipped);
 
   await ajemsPost(cfg, "sync_logs", {
     company_name: companies.join(" | "),
-    entity: "all",
-    sync_type: "upsert",
+    sync_type: "Upsert",
     records_created: totalCreated,
     records_updated: totalUpdated,
-    from_alter_id: 0,
-    to_alter_id: 0,
-    status: errMsg ? "partial" : totalFailed ? "partial" : "success",
-    error_message: errMsg,
+    records_failed: totalFailed,
+    status: errMsg && nothingDone ? "Failed" : errMsg || totalFailed ? "Partial" : "Success",
+    error_message: errMsg.trim(),
   }, log);
 
   log("\n========== SYNC SUMMARY ==========");
@@ -871,14 +971,16 @@ async function runSync(log) {
   }
   log(`  Time: ${((Date.now() - started) / 1000).toFixed(1)}s`);
   log("==================================");
-  log("✅ Done! Check the form responses in AJEMS.");
+  log("✅ Done! Open the Tally Connector app in AJEMS to see the data.");
   return stats;
 }
 
 /* ============ CONNECT: AJEMS JSON Builder ============ */
 /** Work out this workspace's API base from what the user typed.
  *  Accepts an organisation name - "Acme Corp", "acme corp", "ACMECORP"
- *  all resolve to acmecorp - or a full workspace URL. */
+ *  all resolve to acmecorp on the live server - or a workspace URL.
+ *  A workspace on the testing server is always given by its URL
+ *  (acme.ajems-staging.com, or any page of it), whose API is acme.api.ajems-staging.com. */
 function resolveTenant(input) {
   const raw = String(input || "").trim();
   if (!raw) return { ok: false, reason: "EMPTY" };
@@ -893,6 +995,10 @@ function resolveTenant(input) {
     if (dash) return { ok: true, org: dash[1], apiBase: `https://${dash[1]}.buildprohub-server.com` };
     const api = host.match(/^([a-z0-9][a-z0-9-]*)\.buildprohub-server\.com$/);
     if (api) return { ok: true, org: api[1], apiBase: `https://${host}` };
+    const staging = host.match(/^([a-z0-9][a-z0-9-]*)(?:\.api)?\.ajems-staging\.com$/);
+    if (staging && staging[1] !== "api") {
+      return { ok: true, org: staging[1], apiBase: `https://${staging[1]}.api.ajems-staging.com`, staging: true };
+    }
     return { ok: false, reason: "UNKNOWN_HOST", host };
   }
 
@@ -902,9 +1008,7 @@ function resolveTenant(input) {
   return { ok: true, org: slug, apiBase: `https://${slug}.buildprohub-server.com` };
 }
 
-const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
-/** Find every object that looks like an app ({title, forms}) anywhere in the payload */
+/** Find every object that looks like an app ({title, forms}) anywhere in the payload, in the order given */
 function collectApps(data) {
   const out = [];
   const seen = new Set();
@@ -919,7 +1023,7 @@ function collectApps(data) {
   return out;
 }
 
-/** Match a form to an entity: "Tally Companies" / "Companies" / "tally_companies" all work */
+/** Match a form to an entity: "Companies" / "Tally Companies" / "tally_companies" all work */
 function matchForm(forms, entity) {
   const want = norm(ENTITY_TITLES[entity]);          // "tally companies"
   const wantShort = want.replace(/^tally /, "");      // "companies"
@@ -932,114 +1036,62 @@ function matchForm(forms, entity) {
   );
 }
 
+/** A form's Responses URL, on the server Connect itself reached - so a testing server whose
+ *  replies name another host in their URLs is still the one written to. */
 function responsesUrl(apiBase, form) {
+  const id = form?.form_id || form?.id;
+  if (id) return `${apiBase}/json_builder/forms/${id}/responses/`;
   const u = form?.jsonBuilderUrls?.response_list_get?.url ||
             form?.jsonBuilderUrls?.response_post?.url;
-  if (u) return u.endsWith("/") ? u : u + "/";
-  const id = form?.form_id || form?.id;
-  return id ? `${apiBase}/json_builder/forms/${id}/responses/` : "";
+  return u ? (u.endsWith("/") ? u : u + "/") : "";
 }
 
-/* ============ AUTO-PROVISIONING (creates the Tally Connector app in AJEMS) ============ */
-
-const APP_TEMPLATE = { title: "Tally Connector", description: "Tally", icon: "pi pi-database", color: "cyan" };
-
-const FIELD_TYPE_BY_PREFIX = {
-  text: "Text", number: "Number", checkbox: "Checkbox", dropdown: "Dropdown", date: "Date",
-};
-
-const FIELD_OPTIONS = {
-  "Sync Frequency": ["15 min", "30 min", "1 hour", "Manual only"],
-};
-
-/** Build the create-form payload for one entity straight from GLOBAL_FIELD_KEYS,
- *  so the forms AJEMS creates always match what the sync engine sends. */
-function buildFormPayload(entity, appId) {
-  const keys = GLOBAL_FIELD_KEYS[entity];
-  const allKeys = Object.values(keys);
-  const fields = Object.entries(keys).map(([label, key]) => {
-    const prefix = key.split("_")[0];
-    const field = {
-      field_type: FIELD_TYPE_BY_PREFIX[prefix] || "Text",
-      label,
-      key,
-      required: false,
-      isNew: false,
-      isVisible: true,
-      is_report_hide: false,
-    };
-    if (field.field_type === "Dropdown") {
-      field.multiple = false;
-      field.options = FIELD_OPTIONS[label] || [];
-    }
-    return field;
-  });
-
-  return {
-    app_id: appId,
-    title: ENTITY_TITLES[entity],
-    description: ENTITY_TITLES[entity],
-    isMasterForm: false,
-    // Third-party access must be ON for the connector to read and write
-    isThirdPartyEnabled: true,
-    isThirdPartyPostAllowed: true,
-    thirdPartyPostFields: allKeys,
-    isThirdPartyGetAllowed: true,
-    thirdPartyGetFields: allKeys,
-    // A desktop agent cannot solve a captcha
-    isPublicPostRecaptchaEnabled: false,
-    allowFormColStat: false,
-    allowToClone: false,
-    clonedBy: "",
-    fields,
-  };
+/** Of the workspace's apps, the installed Tally Connector: the app named for Tally that holds
+ *  the most of our modules; of two equally complete ones, the one installed last. */
+function findTallyApp(apps) {
+  let best = null, bestScore = 0;
+  for (const a of apps) {                                  // the workspace lists apps oldest first
+    if (!norm(a.title).includes("tally")) continue;
+    const forms = arr(a.forms);
+    const score = Object.keys(ENTITY_TITLES).filter((e) => matchForm(forms, e)).length;
+    if (score > 0 && score >= bestScore) { best = a; bestScore = score; }
+  }
+  // An app listed without its forms (some replies leave them out) can still be the one, by name
+  return best || apps.find((a) => norm(a.title).startsWith("tally connector")) || null;
 }
 
-/** Create the app and all 8 forms in the user's workspace. Returns the created forms. */
-async function provisionTallyApp(apiBase, headers, log) {
-  log("Setting up the Tally Connector app in your AJEMS workspace...");
-
-  let appId;
+/** Older AJEMS servers answer the connector only for forms with third-party access switched on.
+ *  The App Store installs forms with it off, so it is switched on here for every field.
+ *  Newer servers do not need this; a key that may not change the form is not an error. */
+async function allowApiAccess(apiBase, headers, form, log) {
+  const id = form.form_id || form.id;
+  if (!id) return;
+  if (form.isThirdPartyEnabled && form.isThirdPartyGetAllowed && form.isThirdPartyPostAllowed &&
+      !arr(form.thirdPartyGetFields).length && !arr(form.thirdPartyPostFields).length) return;
+  const keys = arr(form.fields).filter((f) => f && f.key && f.isVisible !== false).map((f) => f.key);
+  const listed = (have) => !arr(have).length || keys.every((k) => arr(have).includes(k));
+  if (form.isThirdPartyEnabled && form.isThirdPartyGetAllowed && form.isThirdPartyPostAllowed &&
+      listed(form.thirdPartyGetFields) && listed(form.thirdPartyPostFields)) return;
   try {
-    const res = await axios.post(apiBase + "/json_builder/apps/", APP_TEMPLATE, { headers, timeout: 60000 });
-    appId = res.data?.app_id || res.data?.id;
-    if (!appId) throw new Error("no app id returned");
-    log("   App created");
+    await axios.patch(`${apiBase}/json_builder/forms/${id}/`, {
+      isThirdPartyEnabled: true,
+      isThirdPartyGetAllowed: true,
+      thirdPartyGetFields: keys,
+      isThirdPartyPostAllowed: true,
+      thirdPartyPostFields: keys,
+    }, { headers, timeout: 30000 });
   } catch (err) {
-    const st = err.response ? err.response.status : null;
-    log(`❌ Could not create the app (${st ? "HTTP " + st : err.message}).`);
-    return { ok: false, code: "APP_CREATE_FAILED" };
+    detailLog(`   ${form.title}: API access left as it is (${httpWhy(err)})`);
   }
-
-  const created = [];
-  for (const entity of Object.keys(ENTITY_TITLES)) {
-    const payload = buildFormPayload(entity, appId);
-    try {
-      const res = await axios.post(apiBase + "/json_builder/forms/", payload, { headers, timeout: 60000 });
-      const form = res.data || {};
-      if (!form.form_id && !form.id) throw new Error("no form id returned");
-      created.push(form);
-      log(`   ${payload.title} created`);
-    } catch (err) {
-      const st = err.response ? err.response.status : null;
-      const body = err.response ? JSON.stringify(err.response.data).slice(0, 200) : err.message;
-      log(`❌ Could not create "${payload.title}" (${st ? "HTTP " + st : ""} ${body}).`);
-      log(`   ${created.length}/8 forms were created. Please remove the partial app in AJEMS and try again.`);
-      return { ok: false, code: "FORM_CREATE_FAILED", created: created.length };
-    }
-    await sleep(150);
-  }
-
-  log("✅ Tally Connector app created with all 8 forms");
-  return { ok: true, appId, forms: created };
 }
 
 async function connectAjems(log) {
   const cfg = loadConfig();
   const key = (cfg.secretKey || "").trim();
+  detailLog = cfg.verboseLog ? log : () => {};
 
   if (!cfg.tenantUrl || !key) {
-    log("❌ Please enter both the Tenant URL and the Secret Key, then click Connect.");
+    log("❌ Please enter both the Organisation Name and the Secret Key, then click Connect.");
     return { ok: false, code: "MISSING_INPUT" };
   }
 
@@ -1053,7 +1105,7 @@ async function connectAjems(log) {
   const apiBase = t.apiBase;
   const headers = { "X-Json-Builder-Secret-Key": key, "Accept": "application/json" };
   const wcUrl = apiBase + "/json_builder/workspace_config/";
-  log(`Organisation: ${t.org}`);
+  log(`Organisation: ${t.org}${t.staging ? "  (testing server)" : ""}`);
   log(`Connecting to ${wcUrl}`);
 
   let data;
@@ -1062,13 +1114,24 @@ async function connectAjems(log) {
     data = res.data;
     if (typeof data === "string" || !data || typeof data !== "object") {
       log("❌ The workspace address responded, but not with AJEMS data.");
-      log("   Please confirm the dashboard URL for this workspace and try again.");
+      log("   Please confirm the organisation name for this workspace and try again.");
       return { ok: false, code: "NOT_API" };
     }
   } catch (err) {
     const st = err.response ? err.response.status : null;
+    const said = err.response ? JSON.stringify(err.response.data || "").toLowerCase() : "";
+    if (st === 403 && said.includes("not allowed for this api")) {
+      log(`❌ The workspace "${t.org}" is not switched on for connectors on this server.`);
+      log("   Ask the server admin to add it to JSON_BUILDER_ALLOWED_TENANTS, or use a connector key issued for a user of this workspace.");
+      return { ok: false, code: "TENANT_NOT_ALLOWED" };
+    }
+    if (st === 403 && said.includes("another workspace")) {
+      log("❌ This Secret Key belongs to another workspace. Use the key issued in this workspace.");
+      return { ok: false, code: "BAD_KEY" };
+    }
     if (st === 401 || st === 403) {
       log("❌ AJEMS rejected the Secret Key. Copy it again from your AJEMS workspace and retry.");
+      if (t.staging) log("   The testing server has its own keys - a key from the live server does not work here.");
       return { ok: false, code: "BAD_KEY" };
     }
     if (st === 404) {
@@ -1076,44 +1139,30 @@ async function connectAjems(log) {
       log("   Please check the organisation name and try again.");
       return { ok: false, code: "TENANT_NOT_FOUND" };
     }
-    log(`❌ Could not reach AJEMS (${st ? "HTTP " + st : err.message}). Check the URL and your internet connection.`);
+    log(`❌ Could not reach AJEMS (${st ? "HTTP " + st : err.message}). Check the organisation name and your internet connection.`);
     return { ok: false, code: "UNREACHABLE" };
   }
 
   if (data.tenant && norm(data.tenant) !== norm(t.org)) log(`   Server reports workspace: ${data.tenant}`);
 
-  const apps = collectApps(data);
-  if (apps.length === 0) {
-    log("❌ No apps were returned for this Secret Key. Check that the key belongs to this workspace.");
-    return { ok: false, code: "NO_APPS" };
-  }
-
-  // Match the connector app: exact first, then any app titled with "tally" that has forms
-  const tallyApp =
-    apps.find((a) => norm(a.title) === "tally connector") ||
-    apps.find((a) => norm(a.title).includes("tally connector")) ||
-    apps.find((a) => norm(a.title).includes("tally") && arr(a.forms).length >= 4);
-
-  let forms;
-
+  // The app is installed from the App Store; the connector only links to it.
+  const tallyApp = findTallyApp(collectApps(data));
   if (!tallyApp) {
-    log("The Tally Connector app is not in this workspace yet.");
-    const prov = await provisionTallyApp(apiBase, headers, log);
-    if (!prov.ok) return prov;
-    forms = prov.forms;
-  } else {
-    log(`✅ Found app: ${tallyApp.title}`);
-    forms = arr(tallyApp.forms);
+    log("❌ The Tally Connector app is not installed in this workspace.");
+    log("   In AJEMS, open the App Store, install Tally Connector, then click AJEMS Connect again.");
+    log("   (If it is installed, this secret key has no access to it - use the key of a workspace admin.)");
+    return { ok: false, code: "APP_NOT_INSTALLED" };
   }
+  log(`✅ Found app: ${tallyApp.title}`);
 
-  // Some workspace_config responses list forms without URLs - fetch the full form list as a fallback
+  // Some workspace_config replies list forms without URLs - fetch the full form list as a fallback
+  let forms = arr(tallyApp.forms);
   if (forms.length === 0 || !forms.some((f) => f.jsonBuilderUrls || f.form_id)) {
     try {
       const fr = await axios.get(apiBase + "/json_builder/forms/", { headers, timeout: 30000 });
-      const all = arr(fr.data?.results);
       const appId = tallyApp.app_id;
-      const scoped = all.filter((f) => !appId || f.app_id === appId);
-      if (scoped.length) { forms = scoped; log(`   Loaded ${scoped.length} forms from the forms API`); }
+      const scoped = arr(fr.data?.results).filter((f) => !appId || f.app_id === appId);
+      if (scoped.length) { forms = scoped; log(`   Loaded ${scoped.length} modules from the forms API`); }
     } catch { /* keep what we have */ }
   }
 
@@ -1122,6 +1171,7 @@ async function connectAjems(log) {
   for (const e of Object.keys(ENTITY_TITLES)) cfg.formUrls[e] = "";
   let matched = 0;
   const missing = [];
+  const linked = [];
 
   for (const entity of Object.keys(ENTITY_TITLES)) {
     const form = matchForm(forms, entity);
@@ -1129,23 +1179,28 @@ async function connectAjems(log) {
     if (url) {
       cfg.formUrls[entity] = url;
       matched++;
-      log(`   ${form.title || ENTITY_TITLES[entity]} → linked`);
-    } else {
-      missing.push(ENTITY_TITLES[entity]);
+      linked.push(form);
+      log(`   ${form.title || moduleName(entity)} → linked`);
+    } else if (!OPTIONAL_ENTITIES.includes(entity)) {
+      missing.push(moduleName(entity));
     }
   }
 
-  cfg.apiBase = apiBase;
-  cfg.secretKey = key;
-  saveConfig(cfg);
-
   if (missing.length) {
-    log(`${matched}/8 forms linked. Missing: ${missing.join(", ")}`);
-    log("   Delete the incomplete Tally Connector app in AJEMS and click Connect again to rebuild it.");
+    log(`❌ The app is missing: ${missing.join(", ")}.`);
+    log("   Uninstall Tally Connector in AJEMS, install it again from the App Store, then click AJEMS Connect.");
     return { ok: false, code: "FORMS_INCOMPLETE", matched };
   }
 
-  log("✅ Connection successful - all 8 forms linked and saved. You can Run Sync now.");
+  for (const form of linked) await allowApiAccess(apiBase, headers, form, log);
+
+  cfg.apiBase = apiBase;
+  cfg.secretKey = key;
+  cfg.appId = txt(tallyApp.app_id);
+  cfg.appTitle = txt(tallyApp.title);
+  saveConfig(cfg);
+
+  log(`✅ Connection successful - ${matched} modules linked and saved. You can Run Sync now.`);
   return { ok: true, matched };
 }
 
